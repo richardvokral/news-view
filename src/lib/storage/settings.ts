@@ -11,8 +11,12 @@ export async function getApiConfig(): Promise<ApiConfig> {
     return applyEnvDefaults(DEFAULT_API_CONFIG);
   }
 
-  const config: ApiConfig = JSON.parse(raw);
-  return applyEnvDefaults(config);
+  const config = JSON.parse(raw);
+  // Ensure excludeWords exists (backward compat with old configs)
+  if (!Array.isArray(config.excludeWords)) {
+    config.excludeWords = [];
+  }
+  return applyEnvDefaults(config as ApiConfig);
 }
 
 export async function saveApiConfig(config: ApiConfig): Promise<void> {
@@ -46,5 +50,6 @@ function applyEnvDefaults(config: ApiConfig): ApiConfig {
         process.env.ANTHROPIC_API_KEY ||
         "",
     },
+    excludeWords: config.excludeWords || [],
   };
 }

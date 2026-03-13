@@ -27,6 +27,7 @@ export interface ApiConfig {
   gnews: ApiSourceConfig;
   twitter: { enabled: boolean; bearerToken: string };
   clustering: { mode: "keywords" | "ai"; anthropicApiKey: string };
+  excludeWords: string[];
 }
 
 export const DEFAULT_API_CONFIG: ApiConfig = {
@@ -35,6 +36,7 @@ export const DEFAULT_API_CONFIG: ApiConfig = {
   gnews: { enabled: true, apiKey: "" },
   twitter: { enabled: false, bearerToken: "" },
   clustering: { mode: "keywords", anthropicApiKey: "" },
+  excludeWords: [],
 };
 
 export interface Topic {
@@ -47,4 +49,5 @@ export interface Topic {
   latestPublishedAt: string;
   trendScore: number;
   category: string | null;
+  urgency: number;
 }

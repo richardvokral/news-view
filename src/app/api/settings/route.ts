@@ -35,6 +35,7 @@ export async function GET(request: NextRequest) {
         mode: config.clustering.mode,
         anthropicApiKey: maskKey(config.clustering.anthropicApiKey),
       },
+      excludeWords: config.excludeWords || [],
     };
     return NextResponse.json(masked);
   } catch (error) {
@@ -86,6 +87,9 @@ export async function POST(request: NextRequest) {
           ? currentConfig.clustering.anthropicApiKey
           : body.clustering?.anthropicApiKey ?? currentConfig.clustering.anthropicApiKey,
       },
+      excludeWords: Array.isArray(body.excludeWords)
+        ? body.excludeWords.filter((w: unknown) => typeof w === "string" && w.trim())
+        : currentConfig.excludeWords || [],
     };
 
     await saveApiConfig(newConfig);

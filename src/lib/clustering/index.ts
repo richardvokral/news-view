@@ -5,7 +5,7 @@ import { AiClustering } from "./ai-clustering";
 
 export function getClusteringStrategy(config: ApiConfig): ClusteringStrategy {
   if (config.clustering.mode === "ai" && config.clustering.anthropicApiKey) {
-    return new AiClustering(config.clustering.anthropicApiKey);
+    return new AiClustering(config.clustering.anthropicApiKey, config.excludeWords || []);
   }
-  return new KeywordClustering();
+  return new KeywordClustering(config.excludeWords || []);
 }

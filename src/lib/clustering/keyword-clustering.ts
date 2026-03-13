@@ -2,6 +2,7 @@ import { NormalizedArticle, Topic } from "../fetchers/types";
 import { ClusteringStrategy } from "./types";
 import { jaccardSimilarity } from "./tokenizer";
 import { hashId } from "../fetchers/utils";
+import { computeUrgency } from "./ai-clustering";
 
 class UnionFind {
   parent: number[];
@@ -37,12 +38,17 @@ class UnionFind {
 const SIMILARITY_THRESHOLD = 0.25;
 
 export class KeywordClustering implements ClusteringStrategy {
+  private excludeWords: string[];
+
+  constructor(excludeWords: string[] = []) {
+    this.excludeWords = excludeWords.map((w) => w.toLowerCase());
+  }
+
   async cluster(articles: NormalizedArticle[]): Promise<Topic[]> {
     if (articles.length === 0) return [];
 
     const uf = new UnionFind(articles.length);
 
-    // Pairwise comparison
     for (let i = 0; i < articles.length; i++) {
       for (let j = i + 1; j < articles.length; j++) {
         if (articles[i].keywords.length === 0 || articles[j].keywords.length === 0) continue;
@@ -53,7 +59,6 @@ export class KeywordClustering implements ClusteringStrategy {
       }
     }
 
-    // Group articles by cluster root
     const clusters = new Map<number, number[]>();
     for (let i = 0; i < articles.length; i++) {
       const root = uf.find(i);
@@ -61,7 +66,6 @@ export class KeywordClustering implements ClusteringStrategy {
       clusters.get(root)!.push(i);
     }
 
-    // Build topics
     const topics: Topic[] = [];
     const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
     const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
@@ -69,7 +73,6 @@ export class KeywordClustering implements ClusteringStrategy {
     for (const [, indices] of clusters) {
       const clusterArticles = indices.map((i) => articles[i]);
 
-      // Find most common keywords for topic name
       const keywordCounts = new Map<string, number>();
       for (const article of clusterArticles) {
         for (const kw of article.keywords) {
@@ -87,6 +90,9 @@ export class KeywordClustering implements ClusteringStrategy {
           ? topKeywords.map((k) => k.charAt(0).toUpperCase() + k.slice(1)).join(" ")
           : clusterArticles[0].title.slice(0, 50);
 
+      // Filter out topics matching exclude words
+      if (this.shouldExclude(name, topKeywords, clusterArticles)) continue;
+
       const usCount = clusterArticles.filter((a) => a.sourceCountry === "us").length;
       const deCount = clusterArticles.filter((a) => a.sourceCountry === "de").length;
 
@@ -95,7 +101,6 @@ export class KeywordClustering implements ClusteringStrategy {
         clusterArticles[0].publishedAt
       );
 
-      // Trend score: articles in last 2h / articles in last 24h
       const recentCount = clusterArticles.filter(
         (a) => new Date(a.publishedAt).getTime() > twoHoursAgo
       ).length;
@@ -104,7 +109,6 @@ export class KeywordClustering implements ClusteringStrategy {
       ).length;
       const trendScore = dayCount > 0 ? recentCount / dayCount : 0;
 
-      // Find most common category
       const categoryCounts = new Map<string, number>();
       for (const a of clusterArticles) {
         if (a.category) {
@@ -114,6 +118,8 @@ export class KeywordClustering implements ClusteringStrategy {
       const topCategory = categoryCounts.size > 0
         ? [...categoryCounts.entries()].sort((a, b) => b[1] - a[1])[0][0]
         : null;
+
+      const urgency = computeUrgency(clusterArticles, trendScore, usCount, deCount);
 
       topics.push({
         id: hashId(topKeywords.join("-")),
@@ -125,15 +131,29 @@ export class KeywordClustering implements ClusteringStrategy {
         latestPublishedAt,
         trendScore,
         category: topCategory,
+        urgency,
       });
     }
 
-    // Sort by trend score, then total articles
     topics.sort((a, b) => {
+      if (b.urgency !== a.urgency) return b.urgency - a.urgency;
       if (b.trendScore !== a.trendScore) return b.trendScore - a.trendScore;
       return b.totalArticles - a.totalArticles;
     });
 
     return topics;
+  }
+
+  private shouldExclude(name: string, keywords: string[], articles: NormalizedArticle[]): boolean {
+    if (this.excludeWords.length === 0) return false;
+
+    const nameLower = name.toLowerCase();
+    for (const word of this.excludeWords) {
+      if (nameLower.includes(word)) return true;
+      if (keywords.some((kw) => kw.toLowerCase().includes(word))) return true;
+      // Check article titles too
+      if (articles.some((a) => a.title.toLowerCase().includes(word))) return true;
+    }
+    return false;
   }
 }

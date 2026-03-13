@@ -8,24 +8,39 @@ interface TopicTableProps {
   topics: Topic[];
 }
 
-type SortKey = "trend" | "total" | "us" | "de" | "latest";
+type SortKey = "urgency" | "trend" | "total" | "us" | "de" | "latest";
+type SortDir = "asc" | "desc";
 
 export default function TopicTable({ topics }: TopicTableProps) {
-  const [sortKey, setSortKey] = useState<SortKey>("trend");
+  const [sortKey, setSortKey] = useState<SortKey>("urgency");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(sortDir === "desc" ? "asc" : "desc");
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  };
+
+  const multiplier = sortDir === "desc" ? 1 : -1;
 
   const sorted = [...topics].sort((a, b) => {
     switch (sortKey) {
+      case "urgency":
+        return (b.urgency - a.urgency) * multiplier;
       case "trend":
-        return b.trendScore - a.trendScore || b.totalArticles - a.totalArticles;
+        return ((b.trendScore - a.trendScore) || (b.totalArticles - a.totalArticles)) * multiplier;
       case "total":
-        return b.totalArticles - a.totalArticles;
+        return (b.totalArticles - a.totalArticles) * multiplier;
       case "us":
-        return b.countByCountry.us - a.countByCountry.us;
+        return (b.countByCountry.us - a.countByCountry.us) * multiplier;
       case "de":
-        return b.countByCountry.de - a.countByCountry.de;
+        return (b.countByCountry.de - a.countByCountry.de) * multiplier;
       case "latest":
-        return b.latestPublishedAt.localeCompare(a.latestPublishedAt);
+        return b.latestPublishedAt.localeCompare(a.latestPublishedAt) * multiplier;
       default:
         return 0;
     }
@@ -39,6 +54,11 @@ export default function TopicTable({ topics }: TopicTableProps) {
     );
   }
 
+  const arrow = (key: SortKey) => {
+    if (sortKey !== key) return "";
+    return sortDir === "desc" ? " \u2193" : " \u2191";
+  };
+
   return (
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
       <table className="w-full">
@@ -47,30 +67,53 @@ export default function TopicTable({ topics }: TopicTableProps) {
             <th className="text-left text-xs font-medium text-gray-500 px-4 py-3">
               Topic
             </th>
+            <th className="text-center text-xs font-medium text-gray-500 px-4 py-3 w-20">
+              <button
+                onClick={() => handleSort("urgency")}
+                className={`${sortKey === "urgency" ? "text-blue-600 font-bold" : ""}`}
+              >
+                Urgency{arrow("urgency")}
+              </button>
+            </th>
             <th className="text-left text-xs font-medium text-gray-500 px-4 py-3 w-16">
-              <button onClick={() => setSortKey("trend")} className={sortKey === "trend" ? "text-blue-600" : ""}>
-                Trend
+              <button
+                onClick={() => handleSort("trend")}
+                className={sortKey === "trend" ? "text-blue-600 font-bold" : ""}
+              >
+                Trend{arrow("trend")}
               </button>
             </th>
             <th className="text-left text-xs font-medium text-gray-500 px-4 py-3 w-40">
               <div className="flex gap-2">
-                <button onClick={() => setSortKey("us")} className={sortKey === "us" ? "text-blue-600" : ""}>
-                  US
+                <button
+                  onClick={() => handleSort("us")}
+                  className={sortKey === "us" ? "text-blue-600 font-bold" : ""}
+                >
+                  US{arrow("us")}
                 </button>
                 <span>/</span>
-                <button onClick={() => setSortKey("de")} className={sortKey === "de" ? "text-blue-600" : ""}>
-                  DE
+                <button
+                  onClick={() => handleSort("de")}
+                  className={sortKey === "de" ? "text-blue-600 font-bold" : ""}
+                >
+                  DE{arrow("de")}
                 </button>
               </div>
             </th>
             <th className="text-center text-xs font-medium text-gray-500 px-4 py-3 w-16">
-              <button onClick={() => setSortKey("total")} className={sortKey === "total" ? "text-blue-600" : ""}>
-                Total
+              <button
+                onClick={() => handleSort("total")}
+                className={sortKey === "total" ? "text-blue-600 font-bold" : ""}
+              >
+                Total{arrow("total")}
               </button>
             </th>
             <th className="text-right text-xs font-medium text-gray-500 px-4 py-3 w-28">
-              <button onClick={() => setSortKey("latest")} className={sortKey === "latest" ? "text-blue-600" : ""}>
-                Last Update
+              <button
+                onClick={() => handleSort("latest")}
+                className={sortKey === "latest" ? "text-blue-600 font-bold" : ""}
+              >
+                Last Update{arrow("latest")}
               </button>
             </th>
           </tr>
@@ -123,6 +166,9 @@ function TopicRow({
             </div>
           </div>
         </td>
+        <td className="px-4 py-3 text-center">
+          <UrgencyBadge urgency={topic.urgency} />
+        </td>
         <td className="px-4 py-3">
           <span className={`text-sm ${trendLabel.color}`}>
             {trendLabel.icon}
@@ -145,7 +191,7 @@ function TopicRow({
       </tr>
       {expanded && (
         <tr>
-          <td colSpan={5} className="bg-gray-50 px-4 py-3">
+          <td colSpan={6} className="bg-gray-50 px-4 py-3">
             <div className="grid gap-2 max-h-64 overflow-y-auto">
               {topic.articles.map((article) => (
                 <a
@@ -180,6 +226,22 @@ function TopicRow({
         </tr>
       )}
     </>
+  );
+}
+
+function UrgencyBadge({ urgency }: { urgency: number }) {
+  const config: Record<number, { bg: string; text: string; label: string }> = {
+    1: { bg: "bg-gray-100", text: "text-gray-500", label: "1" },
+    2: { bg: "bg-blue-100", text: "text-blue-600", label: "2" },
+    3: { bg: "bg-yellow-100", text: "text-yellow-700", label: "3" },
+    4: { bg: "bg-orange-100", text: "text-orange-700", label: "4" },
+    5: { bg: "bg-red-100", text: "text-red-700", label: "5" },
+  };
+  const c = config[urgency] || config[1];
+  return (
+    <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${c.bg} ${c.text}`}>
+      {c.label}
+    </span>
   );
 }
 
