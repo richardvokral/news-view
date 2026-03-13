@@ -15,10 +15,11 @@ export async function storeArticles(
   // Use pipeline for batch ZADD
   const pipeline = redis.pipeline();
   for (const article of articles) {
-    pipeline.zadd(ARTICLES_KEY, {
-      score: new Date(article.publishedAt).getTime(),
-      member: JSON.stringify(article),
-    });
+    pipeline.zadd(
+      ARTICLES_KEY,
+      new Date(article.publishedAt).getTime(),
+      JSON.stringify(article)
+    );
   }
   await pipeline.exec();
   await redis.set(FETCH_LAST_KEY, new Date().toISOString());
@@ -31,15 +32,10 @@ export async function getArticles(
   const redis = getRedis();
   const since = Date.now() - sinceDaysAgo * 24 * 60 * 60 * 1000;
 
-  // Use zrange with BYSCORE option
-  const results: string[] = await redis.zrange(ARTICLES_KEY, since, "+inf", {
-    byScore: true,
-  });
+  // Use zrangebyscore to get articles newer than `since`
+  const results = await redis.zrangebyscore(ARTICLES_KEY, since, "+inf");
 
-  return results.map((item: string) => {
-    if (typeof item === "string") return JSON.parse(item);
-    return item as unknown as NormalizedArticle;
-  });
+  return results.map((item: string) => JSON.parse(item));
 }
 
 export async function pruneOldArticles(): Promise<number> {
@@ -50,12 +46,11 @@ export async function pruneOldArticles(): Promise<number> {
 
 export async function getLastFetchTime(): Promise<string | null> {
   const redis = getRedis();
-  return await redis.get<string>(FETCH_LAST_KEY);
+  return await redis.get(FETCH_LAST_KEY);
 }
 
 export async function acquireFetchLock(): Promise<boolean> {
-  const redis = getRedis();
-  const result = await redis.set(FETCH_LOCK_KEY, "1", { nx: true, ex: 60 });
+  const result = await getRedis().set(FETCH_LOCK_KEY, "1", "EX", 60, "NX");
   return result === "OK";
 }
 

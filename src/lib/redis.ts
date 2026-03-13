@@ -1,19 +1,16 @@
-import { Redis } from "@upstash/redis";
+import Redis from "ioredis";
 
 let redis: Redis | null = null;
 
 export function getRedis(): Redis {
   if (!redis) {
-    const url = process.env.UPSTASH_REDIS_REST_URL;
-    const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+    const url = process.env.REDIS_URL;
 
-    if (!url || !token) {
-      throw new Error(
-        "Missing UPSTASH_REDIS_REST_URL or UPSTASH_REDIS_REST_TOKEN environment variables"
-      );
+    if (!url) {
+      throw new Error("Missing REDIS_URL environment variable");
     }
 
-    redis = new Redis({ url, token });
+    redis = new Redis(url);
   }
   return redis;
 }

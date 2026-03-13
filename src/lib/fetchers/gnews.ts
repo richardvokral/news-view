@@ -21,7 +21,8 @@ async function checkGNewsRateLimit(): Promise<boolean> {
   const redis = getRedis();
   const today = new Date().toISOString().split("T")[0];
   const key = `gnews:requests:${today}`;
-  const count = (await redis.get<number>(key)) ?? 0;
+  const raw = await redis.get(key);
+  const count = raw ? parseInt(raw, 10) : 0;
   return count < 90;
 }
 

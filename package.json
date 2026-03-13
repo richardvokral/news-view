@@ -11,7 +11,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
     "@upstash/qstash": "^2.9.0",
-    "@upstash/redis": "^1.37.0",
+    "ioredis": "^5.10.0",
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3"

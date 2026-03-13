@@ -5,18 +5,19 @@ const CONFIG_KEY = "config:apis";
 
 export async function getApiConfig(): Promise<ApiConfig> {
   const redis = getRedis();
-  const config = await redis.get<ApiConfig>(CONFIG_KEY);
+  const raw = await redis.get(CONFIG_KEY);
 
-  if (!config) {
+  if (!raw) {
     return applyEnvDefaults(DEFAULT_API_CONFIG);
   }
 
+  const config: ApiConfig = JSON.parse(raw);
   return applyEnvDefaults(config);
 }
 
 export async function saveApiConfig(config: ApiConfig): Promise<void> {
   const redis = getRedis();
-  await redis.set(CONFIG_KEY, config);
+  await redis.set(CONFIG_KEY, JSON.stringify(config));
 }
 
 function applyEnvDefaults(config: ApiConfig): ApiConfig {
