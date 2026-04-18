@@ -27,7 +27,7 @@ export interface ApiConfig {
   gnews: ApiSourceConfig;
   twitter: { enabled: boolean; bearerToken: string };
   clustering: {
-    mode: "keywords" | "ai" | "ai-openai";
+    mode: "keywords" | "ai" | "ai-openai" | "hybrid" | "hybrid-openai";
     anthropicApiKey: string;
     openaiApiKey: string;
   };

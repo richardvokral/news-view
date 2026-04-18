@@ -44,7 +44,8 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchTopics();
-    const interval = setInterval(fetchTopics, 60000);
+    // Auto-refresh every 5 min instead of 60s (topics are cached server-side)
+    const interval = setInterval(fetchTopics, 300000);
     return () => clearInterval(interval);
   }, [fetchTopics]);
 
@@ -98,7 +99,13 @@ export default function DashboardPage() {
           {loadingPhase === "analyzing" && (
             <>
               {data ? `Analyzing ${data.totalArticles} articles` : "Loading articles"}
-              {" "}— waiting for {data?.clusteringMode === "ai" ? "Claude AI" : data?.clusteringMode === "ai-openai" ? "OpenAI" : "keyword"} clustering...
+              {" "}— waiting for {
+                data?.clusteringMode === "ai" ? "Claude AI" :
+                data?.clusteringMode === "ai-openai" ? "OpenAI" :
+                data?.clusteringMode === "hybrid" ? "hybrid (Claude)" :
+                data?.clusteringMode === "hybrid-openai" ? "hybrid (OpenAI)" :
+                "keyword"
+              } clustering...
             </>
           )}
           {!loadingPhase && "Loading..."}

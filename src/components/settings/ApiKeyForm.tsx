@@ -219,7 +219,10 @@ export default function ApiKeyForm() {
       </div>
 
       <div className="bg-white rounded-lg border border-gray-200 p-6">
-        <h3 className="text-sm font-semibold text-gray-900 mb-4">Topic Clustering</h3>
+        <h3 className="text-sm font-semibold text-gray-900 mb-2">Topic Clustering</h3>
+        <p className="text-xs text-gray-500 mb-3">
+          Hybrid modes use free keyword grouping, then AI only refines names &amp; urgency (~10x cheaper). Full AI sends all articles to AI.
+        </p>
         <div className="space-y-3">
           <div className="flex items-center gap-3">
             <label className="text-sm text-gray-600 w-24">Mode:</label>
@@ -230,18 +233,20 @@ export default function ApiKeyForm() {
                   ...config,
                   clustering: {
                     ...config.clustering,
-                    mode: e.target.value as "keywords" | "ai" | "ai-openai",
+                    mode: e.target.value as "keywords" | "ai" | "ai-openai" | "hybrid" | "hybrid-openai",
                   },
                 })
               }
               className="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="keywords">Keywords (free)</option>
-              <option value="ai">Claude AI</option>
-              <option value="ai-openai">OpenAI (GPT-4o mini)</option>
+              <option value="keywords">Keywords only (free)</option>
+              <option value="hybrid">Hybrid - Claude (recommended)</option>
+              <option value="hybrid-openai">Hybrid - OpenAI</option>
+              <option value="ai">Full AI - Claude</option>
+              <option value="ai-openai">Full AI - OpenAI</option>
             </select>
           </div>
-          {config.clustering.mode === "ai" && (
+          {(config.clustering.mode === "ai" || config.clustering.mode === "hybrid") && (
             <div className="flex items-center gap-3">
               <label className="text-sm text-gray-600 w-24">Anthropic:</label>
               <input
@@ -265,7 +270,7 @@ export default function ApiKeyForm() {
               />
             </div>
           )}
-          {config.clustering.mode === "ai-openai" && (
+          {(config.clustering.mode === "ai-openai" || config.clustering.mode === "hybrid-openai") && (
             <div className="flex items-center gap-3">
               <label className="text-sm text-gray-600 w-24">OpenAI:</label>
               <input

@@ -33,7 +33,7 @@ Articles:
 ${JSON.stringify(articleList, null, 0)}
 
 Return a JSON array of topics. Each topic must have:
-- "name": A clear, newsroom-quality headline for the topic (3-7 words, e.g. "Ukraine Peace Talks Stall", "Tesla Recalls 500K Vehicles", "Bundestag Debates Immigration Reform")
+- "name": A clear, newsroom-quality headline IN ENGLISH for the topic (3-7 words, e.g. "Ukraine Peace Talks Stall", "Tesla Recalls 500K Vehicles", "Bundestag Debates Immigration Reform"). Translate German topics to English.
 - "category": One of: world, politics, business, technology, science, health, sports, entertainment, environment, or null
 - "urgency": A score from 1 to 5 indicating editorial urgency:
   1 = Low interest, routine coverage
