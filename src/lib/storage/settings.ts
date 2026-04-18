@@ -12,9 +12,11 @@ export async function getApiConfig(): Promise<ApiConfig> {
   }
 
   const config = JSON.parse(raw);
-  // Ensure excludeWords exists (backward compat with old configs)
   if (!Array.isArray(config.excludeWords)) {
     config.excludeWords = [];
+  }
+  if (!config.clustering.openaiApiKey) {
+    config.clustering.openaiApiKey = "";
   }
   return applyEnvDefaults(config as ApiConfig);
 }
@@ -48,6 +50,10 @@ function applyEnvDefaults(config: ApiConfig): ApiConfig {
       anthropicApiKey:
         config.clustering.anthropicApiKey ||
         process.env.ANTHROPIC_API_KEY ||
+        "",
+      openaiApiKey:
+        config.clustering.openaiApiKey ||
+        process.env.OPENAI_API_KEY ||
         "",
     },
     excludeWords: config.excludeWords || [],

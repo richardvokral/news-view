@@ -18,9 +18,12 @@ interface WorldNewsResponse {
 export function createWorldNewsApiFetcher(apiKey: string): Fetcher {
   return {
     name: "worldnewsapi",
-    async fetch(country) {
+    async fetch(country, since) {
       const langMap = { us: "en", de: "de" };
-      const url = `https://api.worldnewsapi.com/top-news?source-country=${country}&language=${langMap[country]}&api-key=${apiKey}`;
+      let url = `https://api.worldnewsapi.com/top-news?source-country=${country}&language=${langMap[country]}&api-key=${apiKey}`;
+      if (since) {
+        url += `&earliest-publish-date=${encodeURIComponent(since)}`;
+      }
 
       const res = await fetch(url);
       if (!res.ok) {

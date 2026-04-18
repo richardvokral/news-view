@@ -2,7 +2,7 @@ import { NormalizedArticle, Topic } from "../fetchers/types";
 import { ClusteringStrategy } from "./types";
 import { jaccardSimilarity } from "./tokenizer";
 import { hashId } from "../fetchers/utils";
-import { computeUrgency } from "./ai-clustering";
+import { computeUrgency } from "./ai-shared";
 
 class UnionFind {
   parent: number[];

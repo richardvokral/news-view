@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiConfig } from "@/lib/storage/settings";
+import { isAuthenticated } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
-
-function isAuthenticated(request: NextRequest): boolean {
-  return request.cookies.get("settings_auth")?.value === "true";
-}
 
 export async function POST(request: NextRequest) {
   if (!isAuthenticated(request)) {
@@ -27,6 +24,8 @@ export async function POST(request: NextRequest) {
         return await testTwitter(config.twitter.bearerToken);
       case "anthropic":
         return await testAnthropic(config.clustering.anthropicApiKey);
+      case "openai":
+        return await testOpenAi(config.clustering.openaiApiKey);
       default:
         return NextResponse.json({ success: false, error: "Unknown service" });
     }
@@ -105,6 +104,24 @@ async function testAnthropic(apiKey: string) {
     });
     const text = response.content[0].type === "text" ? response.content[0].text : "";
     return NextResponse.json({ success: true, message: `Anthropic OK: ${text}` });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: String(error).slice(0, 150) });
+  }
+}
+
+async function testOpenAi(apiKey: string) {
+  if (!apiKey) return NextResponse.json({ success: false, error: "No API key" });
+
+  try {
+    const OpenAI = (await import("openai")).default;
+    const client = new OpenAI({ apiKey });
+    const response = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      max_tokens: 10,
+      messages: [{ role: "user", content: "Say OK" }],
+    });
+    const text = response.choices[0]?.message?.content ?? "";
+    return NextResponse.json({ success: true, message: `OpenAI OK: ${text}` });
   } catch (error) {
     return NextResponse.json({ success: false, error: String(error).slice(0, 150) });
   }

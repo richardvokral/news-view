@@ -211,19 +211,20 @@ export default function ApiKeyForm() {
                   ...config,
                   clustering: {
                     ...config.clustering,
-                    mode: e.target.value as "keywords" | "ai",
+                    mode: e.target.value as "keywords" | "ai" | "ai-openai",
                   },
                 })
               }
               className="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="keywords">Keywords (free)</option>
-              <option value="ai">Claude AI (better quality)</option>
+              <option value="ai">Claude AI</option>
+              <option value="ai-openai">OpenAI (GPT-4o mini)</option>
             </select>
           </div>
           {config.clustering.mode === "ai" && (
             <div className="flex items-center gap-3">
-              <label className="text-sm text-gray-600 w-24">API Key:</label>
+              <label className="text-sm text-gray-600 w-24">Anthropic:</label>
               <input
                 type="password"
                 value={config.clustering.anthropicApiKey}
@@ -242,6 +243,30 @@ export default function ApiKeyForm() {
               <TestButton
                 result={testResults["anthropic"]}
                 onTest={() => testApi("anthropic")}
+              />
+            </div>
+          )}
+          {config.clustering.mode === "ai-openai" && (
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-gray-600 w-24">OpenAI:</label>
+              <input
+                type="password"
+                value={config.clustering.openaiApiKey}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    clustering: {
+                      ...config.clustering,
+                      openaiApiKey: e.target.value,
+                    },
+                  })
+                }
+                placeholder="sk-..."
+                className="flex-1 px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <TestButton
+                result={testResults["openai"]}
+                onTest={() => testApi("openai")}
               />
             </div>
           )}

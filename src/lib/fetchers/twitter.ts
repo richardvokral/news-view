@@ -24,13 +24,11 @@ interface TwitterV2Response {
   errors?: Array<{ message: string; type: string }>;
 }
 
-// Search queries to find trending news content per country
 const SEARCH_QUERIES: Record<string, string> = {
-  us: "lang:en -is:retweet -is:reply has:links (news OR breaking OR report) place_country:US",
+  us: 'lang:en -is:retweet -is:reply has:links (breaking OR "breaking news" OR developing)',
   de: "lang:de -is:retweet -is:reply has:links (Nachrichten OR Meldung OR Bericht)",
 };
 
-// Fallback: broader queries if the specific ones return nothing
 const FALLBACK_QUERIES: Record<string, string> = {
   us: "lang:en -is:retweet -is:reply has:links",
   de: "lang:de -is:retweet -is:reply has:links",
@@ -39,11 +37,10 @@ const FALLBACK_QUERIES: Record<string, string> = {
 export function createTwitterFetcher(bearerToken: string): Fetcher {
   return {
     name: "twitter",
-    async fetch(country) {
-      // Try primary query first, fall back to broader query
-      let articles = await searchTweets(bearerToken, country, SEARCH_QUERIES[country]);
+    async fetch(country, since) {
+      let articles = await searchTweets(bearerToken, country, SEARCH_QUERIES[country], since);
       if (articles.length === 0) {
-        articles = await searchTweets(bearerToken, country, FALLBACK_QUERIES[country]);
+        articles = await searchTweets(bearerToken, country, FALLBACK_QUERIES[country], since);
       }
       return articles;
     },
@@ -53,7 +50,8 @@ export function createTwitterFetcher(bearerToken: string): Fetcher {
 async function searchTweets(
   bearerToken: string,
   country: "us" | "de",
-  query: string
+  query: string,
+  since?: string | null
 ): Promise<NormalizedArticle[]> {
   const params = new URLSearchParams({
     query,
@@ -61,6 +59,10 @@ async function searchTweets(
     sort_order: "relevancy",
     "tweet.fields": "created_at,public_metrics,author_id",
   });
+
+  if (since) {
+    params.set("start_time", since);
+  }
 
   const url = `https://api.x.com/2/tweets/search/recent?${params}`;
 
@@ -70,6 +72,10 @@ async function searchTweets(
 
   if (!res.ok) {
     const errorText = await res.text();
+    if (res.status === 429) {
+      console.warn("Twitter API rate limit reached, skipping");
+      return [];
+    }
     console.error(`Twitter API v2 error: ${res.status} ${errorText}`);
     return [];
   }
@@ -84,7 +90,6 @@ async function searchTweets(
   const articles: NormalizedArticle[] = [];
 
   for (const tweet of tweets) {
-    // Clean up tweet text: remove URLs for the title
     const cleanText = tweet.text
       .replace(/https?:\/\/\S+/g, "")
       .replace(/\s+/g, " ")

@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiConfig, saveApiConfig } from "@/lib/storage/settings";
 import { ApiConfig } from "@/lib/fetchers/types";
-
-function isAuthenticated(request: NextRequest): boolean {
-  return request.cookies.get("settings_auth")?.value === "true";
-}
+import { isAuthenticated } from "@/lib/auth";
 
 export async function GET(request: NextRequest) {
   if (!isAuthenticated(request)) {
@@ -13,7 +10,6 @@ export async function GET(request: NextRequest) {
 
   try {
     const config = await getApiConfig();
-    // Mask API keys for security - only show last 4 chars
     const masked: ApiConfig = {
       worldNewsApi: {
         enabled: config.worldNewsApi.enabled,
@@ -34,6 +30,7 @@ export async function GET(request: NextRequest) {
       clustering: {
         mode: config.clustering.mode,
         anthropicApiKey: maskKey(config.clustering.anthropicApiKey),
+        openaiApiKey: maskKey(config.clustering.openaiApiKey),
       },
       excludeWords: config.excludeWords || [],
     };
@@ -55,7 +52,6 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const currentConfig = await getApiConfig();
 
-    // Merge: only update non-masked values
     const newConfig: ApiConfig = {
       worldNewsApi: {
         enabled: body.worldNewsApi?.enabled ?? currentConfig.worldNewsApi.enabled,
@@ -86,6 +82,9 @@ export async function POST(request: NextRequest) {
         anthropicApiKey: isMasked(body.clustering?.anthropicApiKey)
           ? currentConfig.clustering.anthropicApiKey
           : body.clustering?.anthropicApiKey ?? currentConfig.clustering.anthropicApiKey,
+        openaiApiKey: isMasked(body.clustering?.openaiApiKey)
+          ? currentConfig.clustering.openaiApiKey
+          : body.clustering?.openaiApiKey ?? currentConfig.clustering.openaiApiKey,
       },
       excludeWords: Array.isArray(body.excludeWords)
         ? body.excludeWords.filter((w: unknown) => typeof w === "string" && w.trim())

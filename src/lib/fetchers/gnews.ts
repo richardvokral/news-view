@@ -37,7 +37,7 @@ async function incrementGNewsCounter(): Promise<void> {
 export function createGNewsFetcher(apiKey: string): Fetcher {
   return {
     name: "gnews",
-    async fetch(country) {
+    async fetch(country, since) {
       const withinLimit = await checkGNewsRateLimit();
       if (!withinLimit) {
         console.log("GNews daily rate limit reached, skipping");
@@ -45,7 +45,10 @@ export function createGNewsFetcher(apiKey: string): Fetcher {
       }
 
       const langMap = { us: "en", de: "de" };
-      const url = `https://gnews.io/api/v4/top-headlines?category=general&country=${country}&lang=${langMap[country]}&apikey=${apiKey}`;
+      let url = `https://gnews.io/api/v4/top-headlines?category=general&country=${country}&lang=${langMap[country]}&apikey=${apiKey}`;
+      if (since) {
+        url += `&from=${encodeURIComponent(since)}`
+      }
 
       const res = await fetch(url);
       if (!res.ok) {

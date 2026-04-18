@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import TopicTable from "@/components/dashboard/TopicTable";
 import FilterBar from "@/components/dashboard/FilterBar";
+import StatsBar from "@/components/dashboard/StatsBar";
 import { Topic } from "@/lib/fetchers/types";
 
 interface TopicsResponse {
@@ -75,6 +76,8 @@ export default function DashboardPage() {
           </button>
         </div>
       </div>
+
+      <StatsBar />
 
       <FilterBar
         excluded={excluded}

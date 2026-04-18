@@ -13,7 +13,7 @@ export interface NormalizedArticle {
 
 export interface Fetcher {
   name: string;
-  fetch(country: "us" | "de"): Promise<NormalizedArticle[]>;
+  fetch(country: "us" | "de", since?: string | null): Promise<NormalizedArticle[]>;
 }
 
 export interface ApiSourceConfig {
@@ -26,7 +26,11 @@ export interface ApiConfig {
   newsDataHub: ApiSourceConfig;
   gnews: ApiSourceConfig;
   twitter: { enabled: boolean; bearerToken: string };
-  clustering: { mode: "keywords" | "ai"; anthropicApiKey: string };
+  clustering: {
+    mode: "keywords" | "ai" | "ai-openai";
+    anthropicApiKey: string;
+    openaiApiKey: string;
+  };
   excludeWords: string[];
 }
 
@@ -35,7 +39,7 @@ export const DEFAULT_API_CONFIG: ApiConfig = {
   newsDataHub: { enabled: true, apiKey: "" },
   gnews: { enabled: true, apiKey: "" },
   twitter: { enabled: false, bearerToken: "" },
-  clustering: { mode: "keywords", anthropicApiKey: "" },
+  clustering: { mode: "keywords", anthropicApiKey: "", openaiApiKey: "" },
   excludeWords: [],
 };
 

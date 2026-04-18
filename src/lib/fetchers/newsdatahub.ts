@@ -18,8 +18,11 @@ interface NewsDataHubResponse {
 export function createNewsDataHubFetcher(apiKey: string): Fetcher {
   return {
     name: "newsdatahub",
-    async fetch(country) {
-      const url = `https://api.newsdatahub.com/v1/news?country=${country.toUpperCase()}&language=${country === "us" ? "en" : "de"}`;
+    async fetch(country, since) {
+      let url = `https://api.newsdatahub.com/v1/news?country=${country.toUpperCase()}&language=${country === "us" ? "en" : "de"}`;
+      if (since) {
+        url += `&from=${encodeURIComponent(since)}`;
+      }
 
       const res = await fetch(url, {
         headers: { "X-API-Key": apiKey },

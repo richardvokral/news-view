@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRedis } from "@/lib/redis";
 import { getApiConfig } from "@/lib/storage/settings";
+import { isAuthenticated } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
-
-function isAuthenticated(request: NextRequest): boolean {
-  return request.cookies.get("settings_auth")?.value === "true";
-}
 
 function maskKey(key: string): string {
   if (!key || key.length <= 4) return key ? "****" : "";
@@ -34,7 +31,7 @@ export async function GET(request: NextRequest) {
       newsDataHub: { enabled: config.newsDataHub.enabled, apiKey: maskKey(config.newsDataHub.apiKey) },
       gnews: { enabled: config.gnews.enabled, apiKey: maskKey(config.gnews.apiKey) },
       twitter: { enabled: config.twitter.enabled, bearerToken: maskKey(config.twitter.bearerToken) },
-      clustering: { mode: config.clustering.mode, anthropicApiKey: maskKey(config.clustering.anthropicApiKey) },
+      clustering: { mode: config.clustering.mode, anthropicApiKey: maskKey(config.clustering.anthropicApiKey), openaiApiKey: maskKey(config.clustering.openaiApiKey) },
       excludeWords: config.excludeWords,
     };
 

@@ -25,7 +25,8 @@ function getEnabledFetchers(config: ApiConfig): Fetcher[] {
 }
 
 export async function fetchAllNews(
-  config: ApiConfig
+  config: ApiConfig,
+  since?: string | null
 ): Promise<NormalizedArticle[]> {
   const fetchers = getEnabledFetchers(config);
   const countries: ("us" | "de")[] = ["us", "de"];
@@ -33,7 +34,7 @@ export async function fetchAllNews(
   const promises = fetchers.flatMap((fetcher) =>
     countries.map(async (country) => {
       try {
-        const articles = await fetcher.fetch(country);
+        const articles = await fetcher.fetch(country, since);
         console.log(
           `${fetcher.name} [${country}]: fetched ${articles.length} articles`
         );
