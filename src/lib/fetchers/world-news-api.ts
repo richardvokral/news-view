@@ -15,6 +15,32 @@ interface WorldNewsResponse {
   top_news?: Array<{ news?: WorldNewsArticle[] }>;
 }
 
+function normalizeTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function titlesAreSimilar(a: string, b: string): boolean {
+  const na = normalizeTitle(a);
+  const nb = normalizeTitle(b);
+  if (na === nb) return true;
+  if (na.includes(nb) || nb.includes(na)) return true;
+
+  const wordsA = new Set(na.split(" ").filter((w) => w.length > 3));
+  const wordsB = new Set(nb.split(" ").filter((w) => w.length > 3));
+  if (wordsA.size === 0 || wordsB.size === 0) return false;
+
+  let overlap = 0;
+  for (const w of wordsA) {
+    if (wordsB.has(w)) overlap++;
+  }
+  const similarity = overlap / Math.min(wordsA.size, wordsB.size);
+  return similarity >= 0.7;
+}
+
 export function createWorldNewsApiFetcher(apiKey: string): Fetcher {
   return {
     name: "worldnewsapi",
@@ -39,6 +65,12 @@ export function createWorldNewsApiFetcher(apiKey: string): Fetcher {
       for (const group of data.top_news ?? []) {
         for (const item of group.news ?? []) {
           if (!item.url || !item.title) continue;
+
+          const isDuplicate = articles.some((existing) =>
+            titlesAreSimilar(existing.title, item.title!)
+          );
+          if (isDuplicate) continue;
+
           articles.push({
             id: hashId(item.url),
             title: item.title,
@@ -53,6 +85,11 @@ export function createWorldNewsApiFetcher(apiKey: string): Fetcher {
             keywords: [],
           });
         }
+      }
+
+      const beforeDedup = articles.length;
+      if (beforeDedup > 0) {
+        console.log(`WorldNewsAPI [${country}]: kept ${articles.length} unique articles (deduped from raw results)`);
       }
 
       return articles;

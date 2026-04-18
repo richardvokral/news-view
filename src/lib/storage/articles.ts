@@ -179,6 +179,22 @@ export async function releaseFetchLock(): Promise<void> {
   await redis.del(FETCH_LOCK_KEY);
 }
 
+export async function deleteAllArticles(): Promise<{ redis: number; db: number }> {
+  const redis = getRedis();
+  const redisCount = await redis.zcard(ARTICLES_KEY);
+  await redis.del(ARTICLES_KEY);
+  await redis.del(FETCH_LAST_KEY);
+
+  let dbCount = 0;
+  if (hasDb()) {
+    const db = getDb();
+    const result = await db.query("DELETE FROM articles");
+    dbCount = result.rowCount ?? 0;
+  }
+
+  return { redis: redisCount, db: dbCount };
+}
+
 export async function ensureDbSchema(): Promise<void> {
   if (!hasDb()) return;
   const db = getDb();

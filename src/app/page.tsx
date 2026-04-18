@@ -13,15 +13,20 @@ interface TopicsResponse {
   clusteringMode: string;
 }
 
+type LoadingPhase = "idle" | "fetching" | "analyzing" | null;
+
 export default function DashboardPage() {
   const [data, setData] = useState<TopicsResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingPhase, setLoadingPhase] = useState<LoadingPhase>("fetching");
   const [error, setError] = useState<string | null>(null);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  const [fetching, setFetching] = useState(false);
 
   const fetchTopics = useCallback(async () => {
     try {
       setLoading(true);
+      setLoadingPhase("analyzing");
       const excludeParam =
         excluded.size > 0 ? `?exclude=${[...excluded].join(",")}` : "";
       const res = await fetch(`/api/topics${excludeParam}`);
@@ -33,6 +38,7 @@ export default function DashboardPage() {
       setError(String(err));
     } finally {
       setLoading(false);
+      setLoadingPhase(null);
     }
   }, [excluded]);
 
@@ -58,24 +64,46 @@ export default function DashboardPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={async () => {
+              setFetching(true);
+              setLoadingPhase("fetching");
               try {
                 await fetch("/api/cron/fetch-news");
                 fetchTopics();
-              } catch { /* ignore */ }
+              } catch { /* ignore */ } finally {
+                setFetching(false);
+              }
             }}
-            className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+            disabled={fetching}
+            className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors disabled:opacity-50"
           >
-            Fetch Now
+            {fetching ? "Fetching articles..." : "Fetch Now"}
           </button>
           <button
             onClick={fetchTopics}
-            disabled={loading}
+            disabled={loading || fetching}
             className="text-xs px-3 py-1.5 bg-gray-100 text-gray-600 rounded hover:bg-gray-200 transition-colors disabled:opacity-50"
           >
-            {loading ? "Loading..." : "Refresh"}
+            Refresh
           </button>
         </div>
       </div>
+
+      {(loading || fetching) && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-4 text-sm text-blue-700 flex items-center gap-2">
+          <svg className="animate-spin h-4 w-4 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+          {loadingPhase === "fetching" && "Fetching articles from news sources..."}
+          {loadingPhase === "analyzing" && (
+            <>
+              {data ? `Analyzing ${data.totalArticles} articles` : "Loading articles"}
+              {" "}— waiting for {data?.clusteringMode === "ai" ? "Claude AI" : data?.clusteringMode === "ai-openai" ? "OpenAI" : "keyword"} clustering...
+            </>
+          )}
+          {!loadingPhase && "Loading..."}
+        </div>
+      )}
 
       <StatsBar />
 

@@ -16,6 +16,7 @@ export default function ApiKeyForm() {
   const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
   const [newExcludeWord, setNewExcludeWord] = useState("");
   const [dumping, setDumping] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     loadConfig();
@@ -123,6 +124,24 @@ export default function ApiKeyForm() {
       setMessage({ type: "error", text: `Dump failed: ${err}` });
     } finally {
       setDumping(false);
+    }
+  };
+
+  const deleteAllData = async () => {
+    if (!confirm("Delete ALL article data from Redis and database? This cannot be undone.")) return;
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/articles/delete", { method: "POST" });
+      if (!res.ok) throw new Error("Delete failed");
+      const data = await res.json();
+      setMessage({
+        type: "success",
+        text: `Deleted ${data.deleted.redis} articles from Redis, ${data.deleted.db} from database`,
+      });
+    } catch (err) {
+      setMessage({ type: "error", text: `Delete failed: ${err}` });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -341,6 +360,13 @@ export default function ApiKeyForm() {
           className="px-6 py-2 bg-gray-100 text-gray-700 text-sm rounded-md hover:bg-gray-200 border border-gray-300 disabled:opacity-50 transition-colors"
         >
           {dumping ? "Dumping..." : "Dump All Data"}
+        </button>
+        <button
+          onClick={deleteAllData}
+          disabled={deleting}
+          className="px-6 py-2 bg-red-50 text-red-700 text-sm rounded-md hover:bg-red-100 border border-red-300 disabled:opacity-50 transition-colors"
+        >
+          {deleting ? "Deleting..." : "Delete All Data"}
         </button>
       </div>
     </div>
