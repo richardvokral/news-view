@@ -1,30 +1,53 @@
-# Phase B: Article performance monitoring (deferred)
+# Article monitor
 
-This feature is **not yet implemented**. The schema placeholders (`article_monitors`, `article_metric_snapshots`) already exist in `src/lib/db-schema.sql` so Phase B migrations are a no-op.
+Periodically pulls per-article pageviews from Plausible so editors can watch fresh articles in near-real time on `/monitor`. No CMS access required — we rely on Plausible's `event:page` breakdown.
 
-## Goal
+## Runbook
 
-For each Plausible site we monitor, discover new article pages as they appear in Plausible traffic, then snapshot their short-window metrics at a configurable interval (default 5 minutes) so editors can see how fresh pieces perform over time.
+1. **Migrate the DB** (once): sign in as an `ADMIN_EMAILS` user, then `fetch("/api/admin/migrate", { method: "POST" })` from the browser DevTools console, or paste `src/lib/db-schema.sql` into the Neon SQL editor.
+2. **Grant access to the `monitor` section** — visit `/admin/users` or `/admin/domains` and tick the `monitor` checkbox for whoever should see `/monitor`.
+3. **Configure** at `/admin/monitor`:
+   - Toggle **Enabled**.
+   - Set an article URL regex per site (e.g. `^/(a|clanek)/`). Empty = any non-root path.
+   - Adjust interval / window / retention / rate cap if needed (see defaults below).
+4. **Schedule the cron** in Upstash QStash (already wired into the project):
+   - URL: `https://<your-url>/api/cron/article-monitor`
+   - Method: POST or GET
+   - Header: `Authorization: Bearer $CRON_SECRET`
+   - Cadence: match your configured interval (default 300s = every 5 min).
+5. Wait one tick. Users with the `monitor` section will see entries on `/monitor`.
 
-## Sketch
+## Defaults and caps
 
-1. **Discovery** — a cron tick calls Plausible `breakdown` by `event:page` with a short period (e.g. `period=day`) for each `PLAUSIBLE_SITE_IDS` entry. Pages that look like articles (heuristic: path matches a configured regex, e.g. `^/clanek/` or `^/[0-9]{4}/`) and aren't already in `article_monitors` get inserted.
-2. **Snapshotting** — for every row in `article_monitors` still in its monitoring window, call Plausible with a tight period and store the `visitors` and `pageviews` counts into `article_metric_snapshots` (`window_seconds` = the interval).
-3. **Surfacing** — add a dashboard widget type (e.g. `article_monitor`) that plots one article's 5-minute-bucket timeseries from our own DB (not Plausible), so we keep history even after Plausible ages it out.
-4. **AI summaries (optional)** — run titles of the top-performing new articles through the already-installed Anthropic SDK to produce short trend blurbs.
+| Knob | Default | Purpose |
+| --- | --- | --- |
+| `enabled` | `false` | Master switch; cron is a no-op until flipped. |
+| `intervalSeconds` | `300` | Expected cron cadence. Minimum 60s. |
+| `windowHours` | `48` | How recent an article must be to show on `/monitor`. |
+| `retentionDays` | `7` | Snapshots older than this are pruned each tick. |
+| `maxRequestsPerHour` | `240` | Redis-backed hourly cap. Each tick uses 1 call per site. |
 
-## Admin knobs
+**Plausible budget**: at 5-min cadence and 2 sites → **24 calls/hour, 576/day**, well inside any plan. Adjust the cap if you add more sites or go faster.
 
-- `article_monitor_interval_seconds` — stored in a to-be-added `app_settings(key, value)` table or in `dashboard_defaults` JSON.
-- Heuristic for "is this an article" — a per-site regex, also admin-editable.
-- Monitoring window (how long to keep snapshotting after first seen) — default 24h.
+## How snapshots work
 
-## Cron wiring
+- Each tick does one Plausible `breakdown` by `event:page` with `period=day&date=today`, limit 100.
+- Rows matching the site's article regex are upserted into `article_monitors`.
+- The cumulative `visitors` / `pageviews` for the page since midnight are written into `article_metric_snapshots`.
+- The dashboard sparkline plots the running curve; the big number is the latest snapshot.
+- Once per tick we prune snapshots older than `retentionDays` and monitor rows untouched for longer than `windowHours + 24h`.
 
-Reuse the existing `vercel.json` cron + Upstash QStash pattern that `/api/cron/fetch-news` already uses. One new endpoint `/api/cron/article-monitor` runs both discovery + snapshotting per site; guard with `CRON_SECRET`.
+## Failure modes
 
-## Not doing in this pass
+- **Plausible 4xx/5xx on one site**: logged, that site records 0 articles for the tick, other sites still run.
+- **Over the rate cap**: tick returns `skippedReason: "rate_capped"`; nothing is inserted, counter persists until the hour rolls over.
+- **Monitor disabled**: tick returns `skippedReason: "disabled"` immediately.
+- **Plausible resets at midnight**: sparkline will appear to "drop" on the day boundary; visitors count resets. Displayed as-is (we store raw cumulative values).
 
-- Live UI on `/reports` (widget type exists only as a placeholder).
+## Not yet implemented (future work)
+
+- OG-tag scraping for article thumbnail / author / published date (would require one HEAD/GET per newly-seen URL, cache forever).
+- AI summaries of title trends via the already-installed Anthropic SDK.
 - Cross-site article de-dup.
-- Retention / cleanup of old snapshots.
+- Traffic-source breakdown per article (Google Search / Discover / News) to match the design reference.
+- Per-site monitor section (currently all or nothing via ACL).
