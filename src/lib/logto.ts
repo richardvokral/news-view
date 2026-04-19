@@ -1,7 +1,7 @@
 import type { LogtoNextConfig } from "@logto/next";
 import { getLogtoContext } from "@logto/next/server-actions";
 import { resolveSections, isAdmin } from "./access";
-import type { Section } from "@/types/dashboard";
+import { ALL_SECTIONS, type Section } from "@/types/dashboard";
 
 export const logtoConfig: LogtoNextConfig = {
   endpoint: process.env.LOGTO_ENDPOINT!,
@@ -29,7 +29,8 @@ export async function getSession(): Promise<Session> {
         : null;
     if (!email) return { email: null, isAdmin: false, sections: [] };
     const admin = isAdmin(email);
-    const sections = admin ? ["reports", "news"] as Section[] : await resolveSections(email);
+    // Admins get every section; non-admins go through email -> domain -> deny.
+    const sections = admin ? [...ALL_SECTIONS] : await resolveSections(email);
     return { email, isAdmin: admin, sections };
   } catch {
     return { email: null, isAdmin: false, sections: [] };
