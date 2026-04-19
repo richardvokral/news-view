@@ -8,13 +8,24 @@ interface Props {
   sites: string[];
 }
 
+interface TickResult {
+  ok: boolean;
+  skippedReason?: string;
+  sites?: { siteId: string; articles: number }[];
+  pruned?: { snapshots: number; monitors: number };
+  requestsThisHour?: number;
+  error?: string;
+}
+
 export default function MonitorConfigForm({ initial, sites }: Props) {
   const [config, setConfig] = useState<MonitorConfig>(initial);
   const [saving, setSaving] = useState(false);
+  const [running, setRunning] = useState(false);
   const [message, setMessage] = useState<{
     type: "success" | "error";
     text: string;
   } | null>(null);
+  const [tickResult, setTickResult] = useState<TickResult | null>(null);
 
   function setField<K extends keyof MonitorConfig>(
     key: K,
@@ -54,6 +65,24 @@ export default function MonitorConfigForm({ initial, sites }: Props) {
       });
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function runNow() {
+    setRunning(true);
+    setTickResult(null);
+    try {
+      const res = await fetch("/api/admin/monitor-run", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setTickResult(data);
+    } catch (err) {
+      setTickResult({
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setRunning(false);
     }
   }
 
@@ -123,7 +152,8 @@ export default function MonitorConfigForm({ initial, sites }: Props) {
           JavaScript regex applied to the Plausible{" "}
           <code className="rounded bg-gray-100 px-1 text-[11px]">page</code>{" "}
           value to decide what counts as an article. Empty means &ldquo;any non-root
-          path&rdquo;. Example: <code className="rounded bg-gray-100 px-1 text-[11px]">^/(a|clanek)/</code>.
+          path&rdquo;. Example:{" "}
+          <code className="rounded bg-gray-100 px-1 text-[11px]">^/(a|clanek)/</code>.
         </p>
         {sites.length === 0 ? (
           <p className="text-sm text-amber-600">
@@ -134,10 +164,7 @@ export default function MonitorConfigForm({ initial, sites }: Props) {
         ) : (
           <div className="space-y-2">
             {sites.map((siteId) => (
-              <div
-                key={siteId}
-                className="flex items-center gap-3"
-              >
+              <div key={siteId} className="flex items-center gap-3">
                 <code className="w-40 rounded bg-gray-50 px-2 py-1 text-xs text-gray-700">
                   {siteId}
                 </code>
@@ -161,13 +188,26 @@ export default function MonitorConfigForm({ initial, sites }: Props) {
         </p>
       )}
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <button
           type="submit"
           disabled={saving}
           className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
         >
           {saving ? "Saving…" : "Save"}
+        </button>
+        <button
+          type="button"
+          onClick={runNow}
+          disabled={running}
+          className="rounded-lg border border-gray-300 bg-white px-5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+          title={
+            config.enabled
+              ? "Run one tick of the monitor pipeline now"
+              : "Enable the monitor first"
+          }
+        >
+          {running ? "Running…" : "Run now"}
         </button>
         {message && (
           <span
@@ -179,6 +219,46 @@ export default function MonitorConfigForm({ initial, sites }: Props) {
           </span>
         )}
       </div>
+
+      {tickResult && (
+        <div
+          className={`rounded-lg border p-4 text-sm ${
+            tickResult.ok === false || tickResult.error
+              ? "border-red-200 bg-red-50 text-red-700"
+              : "border-gray-200 bg-gray-50 text-gray-700"
+          }`}
+        >
+          {tickResult.error ? (
+            <p>Error: {tickResult.error}</p>
+          ) : tickResult.skippedReason ? (
+            <p>
+              Skipped: <strong>{tickResult.skippedReason}</strong>
+              {typeof tickResult.requestsThisHour === "number" &&
+                ` (requests this hour: ${tickResult.requestsThisHour})`}
+            </p>
+          ) : (
+            <div className="space-y-1">
+              <p className="font-medium text-gray-900">Tick complete</p>
+              <ul className="list-disc pl-5 text-xs text-gray-600">
+                {tickResult.sites?.map((s) => (
+                  <li key={s.siteId}>
+                    <code className="rounded bg-white px-1">{s.siteId}</code>
+                    : {s.articles} article{s.articles === 1 ? "" : "s"}
+                  </li>
+                ))}
+                <li>
+                  Pruned snapshots: {tickResult.pruned?.snapshots ?? 0}, stale
+                  monitors: {tickResult.pruned?.monitors ?? 0}
+                </li>
+                <li>
+                  Plausible calls this hour:{" "}
+                  {tickResult.requestsThisHour ?? 0}
+                </li>
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
     </form>
   );
 }
