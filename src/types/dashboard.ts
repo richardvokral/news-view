@@ -11,9 +11,9 @@ export type PlausibleMetric =
 
 export type PlausibleFilter = [string, string, string[]];
 
-export type Section = "reports" | "news";
+export type Section = "reports" | "news" | "monitor";
 
-export const ALL_SECTIONS: Section[] = ["reports", "news"];
+export const ALL_SECTIONS: Section[] = ["reports", "news", "monitor"];
 
 export interface MetricWidgetConfig {
   id: string;
@@ -126,3 +126,27 @@ export type WidgetConfig =
   | ComputedTimeseriesWidgetConfig
   | ArticleBreakdownWidgetConfig
   | EntityBreakdownWidgetConfig;
+
+// --- Monitor (Phase B) ---
+
+export interface MonitorConfig {
+  enabled: boolean;
+  intervalSeconds: number;
+  windowHours: number;
+  retentionDays: number;
+  maxRequestsPerHour: number;
+  sitePatterns: Record<string, string>;
+  updatedBy: string | null;
+  updatedAt: string | null;
+}
+
+export const DEFAULT_MONITOR_CONFIG: MonitorConfig = {
+  enabled: false,
+  intervalSeconds: 300,
+  windowHours: 48,
+  retentionDays: 7,
+  maxRequestsPerHour: 240,
+  sitePatterns: {},
+  updatedBy: null,
+  updatedAt: null,
+};

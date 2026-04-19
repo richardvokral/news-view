@@ -17,8 +17,6 @@ CREATE INDEX IF NOT EXISTS idx_articles_source ON articles(source);
 CREATE INDEX IF NOT EXISTS idx_articles_source_country ON articles(source_country);
 
 -- Access control: who can see which sections.
--- ADMIN_EMAILS env var bypasses these tables entirely.
--- Resolution for signed-in user: admin -> access_users (exact email) -> access_domains -> deny.
 CREATE TABLE IF NOT EXISTS access_users (
   email TEXT PRIMARY KEY,
   sections TEXT[] NOT NULL DEFAULT '{}',
@@ -33,14 +31,12 @@ CREATE TABLE IF NOT EXISTS access_domains (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Per-user saved dashboard layout (keyed by email).
 CREATE TABLE IF NOT EXISTS dashboard_user_layouts (
   email TEXT PRIMARY KEY,
   widgets JSONB NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Singleton admin-editable default (id=1 enforced).
 CREATE TABLE IF NOT EXISTS dashboard_defaults (
   id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
   widgets JSONB NOT NULL,
@@ -48,7 +44,7 @@ CREATE TABLE IF NOT EXISTS dashboard_defaults (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Phase B placeholders (declared now so future migrations are zero-work; unused in Phase A).
+-- Phase B: article performance monitoring.
 CREATE TABLE IF NOT EXISTS article_monitors (
   page_path TEXT PRIMARY KEY,
   site_id TEXT NOT NULL,
@@ -56,6 +52,9 @@ CREATE TABLE IF NOT EXISTS article_monitors (
   last_checked_at TIMESTAMPTZ,
   metadata JSONB NOT NULL DEFAULT '{}'::jsonb
 );
+
+CREATE INDEX IF NOT EXISTS article_monitors_site_idx
+  ON article_monitors(site_id, first_seen_at DESC);
 
 CREATE TABLE IF NOT EXISTS article_metric_snapshots (
   id BIGSERIAL PRIMARY KEY,
@@ -69,3 +68,16 @@ CREATE TABLE IF NOT EXISTS article_metric_snapshots (
 
 CREATE INDEX IF NOT EXISTS article_metric_snapshots_page_idx
   ON article_metric_snapshots(page_path, captured_at DESC);
+
+-- Monitor config (singleton). Edited via /admin/monitor.
+CREATE TABLE IF NOT EXISTS monitor_config (
+  id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  enabled BOOLEAN NOT NULL DEFAULT false,
+  interval_seconds INTEGER NOT NULL DEFAULT 300,
+  window_hours INTEGER NOT NULL DEFAULT 48,
+  retention_days INTEGER NOT NULL DEFAULT 7,
+  max_requests_per_hour INTEGER NOT NULL DEFAULT 240,
+  site_patterns JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_by TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
