@@ -3,6 +3,7 @@ import { createWorldNewsApiFetcher } from "./world-news-api";
 import { createNewsDataHubFetcher } from "./newsdatahub";
 import { createGNewsFetcher } from "./gnews";
 import { createTwitterFetcher } from "./twitter";
+import { createRssFetchers } from "./rss";
 import { extractKeywords } from "../clustering/tokenizer";
 
 function getEnabledFetchers(config: ApiConfig): Fetcher[] {
@@ -19,6 +20,10 @@ function getEnabledFetchers(config: ApiConfig): Fetcher[] {
   }
   if (config.twitter.enabled && config.twitter.bearerToken) {
     fetchers.push(createTwitterFetcher(config.twitter.bearerToken));
+  }
+
+  if (config.rssFeeds) {
+    fetchers.push(...createRssFetchers(config.rssFeeds));
   }
 
   return fetchers;

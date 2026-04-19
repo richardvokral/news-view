@@ -5,7 +5,7 @@ export interface NormalizedArticle {
   url: string;
   imageUrl: string | null;
   publishedAt: string;
-  source: "worldnewsapi" | "newsdatahub" | "gnews" | "twitter";
+  source: "worldnewsapi" | "newsdatahub" | "gnews" | "twitter" | "rss";
   sourceCountry: "us" | "de";
   category: string | null;
   keywords: string[];
@@ -21,11 +21,20 @@ export interface ApiSourceConfig {
   apiKey: string;
 }
 
+export interface RssFeedConfig {
+  guardian: boolean;
+  spiegel: boolean;
+  dw: boolean;
+  foxNews: boolean;
+  reuters: boolean;
+}
+
 export interface ApiConfig {
   worldNewsApi: ApiSourceConfig;
   newsDataHub: ApiSourceConfig;
   gnews: ApiSourceConfig;
   twitter: { enabled: boolean; bearerToken: string };
+  rssFeeds: RssFeedConfig;
   clustering: {
     mode: "keywords" | "ai" | "ai-openai" | "hybrid" | "hybrid-openai";
     anthropicApiKey: string;
@@ -39,6 +48,7 @@ export const DEFAULT_API_CONFIG: ApiConfig = {
   newsDataHub: { enabled: true, apiKey: "" },
   gnews: { enabled: true, apiKey: "" },
   twitter: { enabled: false, bearerToken: "" },
+  rssFeeds: { guardian: true, spiegel: true, dw: true, foxNews: false, reuters: false },
   clustering: { mode: "keywords", anthropicApiKey: "", openaiApiKey: "" },
   excludeWords: [],
 };

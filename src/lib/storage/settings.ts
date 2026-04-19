@@ -18,6 +18,9 @@ export async function getApiConfig(): Promise<ApiConfig> {
   if (!config.clustering.openaiApiKey) {
     config.clustering.openaiApiKey = "";
   }
+  if (!config.rssFeeds) {
+    config.rssFeeds = DEFAULT_API_CONFIG.rssFeeds;
+  }
   return applyEnvDefaults(config as ApiConfig);
 }
 
@@ -56,6 +59,7 @@ function applyEnvDefaults(config: ApiConfig): ApiConfig {
         process.env.OPENAI_API_KEY ||
         "",
     },
+    rssFeeds: config.rssFeeds || DEFAULT_API_CONFIG.rssFeeds,
     excludeWords: config.excludeWords || [],
   };
 }

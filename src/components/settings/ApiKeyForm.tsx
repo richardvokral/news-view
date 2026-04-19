@@ -219,6 +219,44 @@ export default function ApiKeyForm() {
       </div>
 
       <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <h3 className="text-sm font-semibold text-gray-900 mb-2">RSS Feeds (free)</h3>
+        <p className="text-xs text-gray-500 mb-3">
+          Free news sources — no API key needed.
+        </p>
+        <div className="space-y-2">
+          {([
+            ["guardian", "The Guardian", "US/World"],
+            ["dw", "Deutsche Welle", "DE (English)"],
+            ["spiegel", "Spiegel International", "DE (English)"],
+            ["foxNews", "Fox News", "US/World"],
+            ["reuters", "Reuters", "US/World"],
+          ] as const).map(([key, label, region]) => (
+            <div key={key} className="flex items-center gap-3 py-1.5 border-b border-gray-100 last:border-0">
+              <button
+                onClick={() =>
+                  setConfig({
+                    ...config,
+                    rssFeeds: { ...config.rssFeeds, [key]: !config.rssFeeds[key] },
+                  })
+                }
+                className={`w-10 h-5 rounded-full transition-colors relative flex-shrink-0 ${
+                  config.rssFeeds[key] ? "bg-blue-600" : "bg-gray-300"
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                    config.rssFeeds[key] ? "left-5" : "left-0.5"
+                  }`}
+                />
+              </button>
+              <span className="text-sm font-medium text-gray-700 w-40">{label}</span>
+              <span className="text-xs text-gray-400">{region}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
         <h3 className="text-sm font-semibold text-gray-900 mb-2">Topic Clustering</h3>
         <p className="text-xs text-gray-500 mb-3">
           Hybrid modes use free keyword grouping, then AI only refines names &amp; urgency (~10x cheaper). Full AI sends all articles to AI.

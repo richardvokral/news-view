@@ -31,6 +31,7 @@ export async function GET(request: NextRequest) {
       newsDataHub: { enabled: config.newsDataHub.enabled, apiKey: maskKey(config.newsDataHub.apiKey) },
       gnews: { enabled: config.gnews.enabled, apiKey: maskKey(config.gnews.apiKey) },
       twitter: { enabled: config.twitter.enabled, bearerToken: maskKey(config.twitter.bearerToken) },
+      rssFeeds: config.rssFeeds,
       clustering: { mode: config.clustering.mode, anthropicApiKey: maskKey(config.clustering.anthropicApiKey), openaiApiKey: maskKey(config.clustering.openaiApiKey) },
       excludeWords: config.excludeWords,
     };

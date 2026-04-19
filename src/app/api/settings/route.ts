@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
         enabled: config.twitter.enabled,
         bearerToken: maskKey(config.twitter.bearerToken),
       },
+      rssFeeds: config.rssFeeds,
       clustering: {
         mode: config.clustering.mode,
         anthropicApiKey: maskKey(config.clustering.anthropicApiKey),
@@ -76,6 +77,13 @@ export async function POST(request: NextRequest) {
         bearerToken: isMasked(body.twitter?.bearerToken)
           ? currentConfig.twitter.bearerToken
           : body.twitter?.bearerToken ?? currentConfig.twitter.bearerToken,
+      },
+      rssFeeds: {
+        guardian: body.rssFeeds?.guardian ?? currentConfig.rssFeeds.guardian,
+        spiegel: body.rssFeeds?.spiegel ?? currentConfig.rssFeeds.spiegel,
+        dw: body.rssFeeds?.dw ?? currentConfig.rssFeeds.dw,
+        foxNews: body.rssFeeds?.foxNews ?? currentConfig.rssFeeds.foxNews,
+        reuters: body.rssFeeds?.reuters ?? currentConfig.rssFeeds.reuters,
       },
       clustering: {
         mode: body.clustering?.mode ?? currentConfig.clustering.mode,
