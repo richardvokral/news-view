@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiConfig } from "@/lib/storage/settings";
-import { isAuthenticated } from "@/lib/auth";
+import { getSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
-  if (!isAuthenticated(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await getSession();
+  if (!session.isAdmin) {
+    return NextResponse.json({ error: "Admin required" }, { status: 403 });
   }
 
   try {
@@ -38,8 +39,8 @@ export async function POST(request: NextRequest) {
 }
 
 async function testWorldNewsApi(apiKey: string) {
-  if (!apiKey) return NextResponse.json({ success: false, error: "No API key" });
-
+  if (!apiKey)
+    return NextResponse.json({ success: false, error: "No API key" });
   const res = await fetch(
     `https://api.worldnewsapi.com/top-news?source-country=us&language=en&api-key=${apiKey}`
   );
@@ -47,12 +48,15 @@ async function testWorldNewsApi(apiKey: string) {
     return NextResponse.json({ success: true, message: "WorldNewsAPI OK" });
   }
   const text = await res.text();
-  return NextResponse.json({ success: false, error: `HTTP ${res.status}: ${text.slice(0, 100)}` });
+  return NextResponse.json({
+    success: false,
+    error: `HTTP ${res.status}: ${text.slice(0, 100)}`,
+  });
 }
 
 async function testNewsDataHub(apiKey: string) {
-  if (!apiKey) return NextResponse.json({ success: false, error: "No API key" });
-
+  if (!apiKey)
+    return NextResponse.json({ success: false, error: "No API key" });
   const res = await fetch(
     "https://api.newsdatahub.com/v1/news?country=US&language=en",
     { headers: { "X-API-Key": apiKey } }
@@ -61,12 +65,15 @@ async function testNewsDataHub(apiKey: string) {
     return NextResponse.json({ success: true, message: "NewsDataHub OK" });
   }
   const text = await res.text();
-  return NextResponse.json({ success: false, error: `HTTP ${res.status}: ${text.slice(0, 100)}` });
+  return NextResponse.json({
+    success: false,
+    error: `HTTP ${res.status}: ${text.slice(0, 100)}`,
+  });
 }
 
 async function testGNews(apiKey: string) {
-  if (!apiKey) return NextResponse.json({ success: false, error: "No API key" });
-
+  if (!apiKey)
+    return NextResponse.json({ success: false, error: "No API key" });
   const res = await fetch(
     `https://gnews.io/api/v4/top-headlines?category=general&country=us&lang=en&max=1&apikey=${apiKey}`
   );
@@ -74,26 +81,35 @@ async function testGNews(apiKey: string) {
     return NextResponse.json({ success: true, message: "GNews OK" });
   }
   const text = await res.text();
-  return NextResponse.json({ success: false, error: `HTTP ${res.status}: ${text.slice(0, 100)}` });
+  return NextResponse.json({
+    success: false,
+    error: `HTTP ${res.status}: ${text.slice(0, 100)}`,
+  });
 }
 
 async function testTwitter(bearerToken: string) {
-  if (!bearerToken) return NextResponse.json({ success: false, error: "No bearer token" });
-
+  if (!bearerToken)
+    return NextResponse.json({ success: false, error: "No bearer token" });
   const res = await fetch(
     "https://api.x.com/2/tweets/search/recent?query=test&max_results=10",
     { headers: { Authorization: `Bearer ${bearerToken}` } }
   );
   if (res.ok) {
-    return NextResponse.json({ success: true, message: "Twitter/X API v2 OK" });
+    return NextResponse.json({
+      success: true,
+      message: "Twitter/X API v2 OK",
+    });
   }
   const text = await res.text();
-  return NextResponse.json({ success: false, error: `HTTP ${res.status}: ${text.slice(0, 100)}` });
+  return NextResponse.json({
+    success: false,
+    error: `HTTP ${res.status}: ${text.slice(0, 100)}`,
+  });
 }
 
 async function testAnthropic(apiKey: string) {
-  if (!apiKey) return NextResponse.json({ success: false, error: "No API key" });
-
+  if (!apiKey)
+    return NextResponse.json({ success: false, error: "No API key" });
   try {
     const Anthropic = (await import("@anthropic-ai/sdk")).default;
     const client = new Anthropic({ apiKey });
@@ -102,16 +118,23 @@ async function testAnthropic(apiKey: string) {
       max_tokens: 10,
       messages: [{ role: "user", content: "Say OK" }],
     });
-    const text = response.content[0].type === "text" ? response.content[0].text : "";
-    return NextResponse.json({ success: true, message: `Anthropic OK: ${text}` });
+    const text =
+      response.content[0].type === "text" ? response.content[0].text : "";
+    return NextResponse.json({
+      success: true,
+      message: `Anthropic OK: ${text}`,
+    });
   } catch (error) {
-    return NextResponse.json({ success: false, error: String(error).slice(0, 150) });
+    return NextResponse.json({
+      success: false,
+      error: String(error).slice(0, 150),
+    });
   }
 }
 
 async function testOpenAi(apiKey: string) {
-  if (!apiKey) return NextResponse.json({ success: false, error: "No API key" });
-
+  if (!apiKey)
+    return NextResponse.json({ success: false, error: "No API key" });
   try {
     const OpenAI = (await import("openai")).default;
     const client = new OpenAI({ apiKey });
@@ -123,6 +146,9 @@ async function testOpenAi(apiKey: string) {
     const text = response.choices[0]?.message?.content ?? "";
     return NextResponse.json({ success: true, message: `OpenAI OK: ${text}` });
   } catch (error) {
-    return NextResponse.json({ success: false, error: String(error).slice(0, 150) });
+    return NextResponse.json({
+      success: false,
+      error: String(error).slice(0, 150),
+    });
   }
 }

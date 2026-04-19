@@ -1,18 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
-import { isAuthenticated } from "@/lib/auth";
+import { NextResponse } from "next/server";
+import { getSession } from "@/lib/auth";
 import { deleteAllArticles } from "@/lib/storage/articles";
 
-export async function POST(request: NextRequest) {
-  if (!isAuthenticated(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export async function POST() {
+  const session = await getSession();
+  if (!session.isAdmin) {
+    return NextResponse.json({ error: "Admin required" }, { status: 403 });
   }
 
   try {
     const { redis, db } = await deleteAllArticles();
-    return NextResponse.json({
-      success: true,
-      deleted: { redis, db },
-    });
+    return NextResponse.json({ success: true, deleted: { redis, db } });
   } catch (error) {
     return NextResponse.json(
       { error: "Delete failed", details: String(error) },

@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getRedis } from "@/lib/redis";
 import { getApiConfig } from "@/lib/storage/settings";
-import { isAuthenticated } from "@/lib/auth";
+import { getSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -10,36 +10,52 @@ function maskKey(key: string): string {
   return "****" + key.slice(-4);
 }
 
-export async function GET(request: NextRequest) {
-  if (!isAuthenticated(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export async function GET() {
+  const session = await getSession();
+  if (!session.isAdmin) {
+    return NextResponse.json({ error: "Admin required" }, { status: 403 });
   }
 
   try {
     const redis = getRedis();
 
-    // Get all articles
     const articleStrings = await redis.zrangebyscore("articles:all", 0, "+inf");
     const articles = articleStrings.map((s: string) => {
-      try { return JSON.parse(s); } catch { return s; }
+      try {
+        return JSON.parse(s);
+      } catch {
+        return s;
+      }
     });
 
-    // Get config (masked)
     const config = await getApiConfig();
     const maskedConfig = {
-      worldNewsApi: { enabled: config.worldNewsApi.enabled, apiKey: maskKey(config.worldNewsApi.apiKey) },
-      newsDataHub: { enabled: config.newsDataHub.enabled, apiKey: maskKey(config.newsDataHub.apiKey) },
-      gnews: { enabled: config.gnews.enabled, apiKey: maskKey(config.gnews.apiKey) },
-      twitter: { enabled: config.twitter.enabled, bearerToken: maskKey(config.twitter.bearerToken) },
+      worldNewsApi: {
+        enabled: config.worldNewsApi.enabled,
+        apiKey: maskKey(config.worldNewsApi.apiKey),
+      },
+      newsDataHub: {
+        enabled: config.newsDataHub.enabled,
+        apiKey: maskKey(config.newsDataHub.apiKey),
+      },
+      gnews: {
+        enabled: config.gnews.enabled,
+        apiKey: maskKey(config.gnews.apiKey),
+      },
+      twitter: {
+        enabled: config.twitter.enabled,
+        bearerToken: maskKey(config.twitter.bearerToken),
+      },
       rssFeeds: config.rssFeeds,
-      clustering: { mode: config.clustering.mode, anthropicApiKey: maskKey(config.clustering.anthropicApiKey), openaiApiKey: maskKey(config.clustering.openaiApiKey) },
+      clustering: {
+        mode: config.clustering.mode,
+        anthropicApiKey: maskKey(config.clustering.anthropicApiKey),
+        openaiApiKey: maskKey(config.clustering.openaiApiKey),
+      },
       excludeWords: config.excludeWords,
     };
 
-    // Get last fetch time
     const lastFetch = await redis.get("fetch:last");
-
-    // Get gnews rate limit counters
     const today = new Date().toISOString().split("T")[0];
     const gnewsCount = await redis.get(`gnews:requests:${today}`);
 

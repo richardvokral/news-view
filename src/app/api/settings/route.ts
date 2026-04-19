@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiConfig, saveApiConfig } from "@/lib/storage/settings";
 import { ApiConfig } from "@/lib/fetchers/types";
-import { isAuthenticated } from "@/lib/auth";
+import { getSession } from "@/lib/auth";
 
-export async function GET(request: NextRequest) {
-  if (!isAuthenticated(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+async function requireAdmin() {
+  const session = await getSession();
+  if (!session.isAdmin) {
+    return NextResponse.json({ error: "Admin required" }, { status: 403 });
   }
+  return null;
+}
+
+export async function GET() {
+  const denied = await requireAdmin();
+  if (denied) return denied;
 
   try {
     const config = await getApiConfig();
@@ -45,9 +52,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!isAuthenticated(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const denied = await requireAdmin();
+  if (denied) return denied;
 
   try {
     const body = await request.json();
@@ -55,13 +61,15 @@ export async function POST(request: NextRequest) {
 
     const newConfig: ApiConfig = {
       worldNewsApi: {
-        enabled: body.worldNewsApi?.enabled ?? currentConfig.worldNewsApi.enabled,
+        enabled:
+          body.worldNewsApi?.enabled ?? currentConfig.worldNewsApi.enabled,
         apiKey: isMasked(body.worldNewsApi?.apiKey)
           ? currentConfig.worldNewsApi.apiKey
           : body.worldNewsApi?.apiKey ?? currentConfig.worldNewsApi.apiKey,
       },
       newsDataHub: {
-        enabled: body.newsDataHub?.enabled ?? currentConfig.newsDataHub.enabled,
+        enabled:
+          body.newsDataHub?.enabled ?? currentConfig.newsDataHub.enabled,
         apiKey: isMasked(body.newsDataHub?.apiKey)
           ? currentConfig.newsDataHub.apiKey
           : body.newsDataHub?.apiKey ?? currentConfig.newsDataHub.apiKey,
@@ -89,13 +97,17 @@ export async function POST(request: NextRequest) {
         mode: body.clustering?.mode ?? currentConfig.clustering.mode,
         anthropicApiKey: isMasked(body.clustering?.anthropicApiKey)
           ? currentConfig.clustering.anthropicApiKey
-          : body.clustering?.anthropicApiKey ?? currentConfig.clustering.anthropicApiKey,
+          : body.clustering?.anthropicApiKey ??
+            currentConfig.clustering.anthropicApiKey,
         openaiApiKey: isMasked(body.clustering?.openaiApiKey)
           ? currentConfig.clustering.openaiApiKey
-          : body.clustering?.openaiApiKey ?? currentConfig.clustering.openaiApiKey,
+          : body.clustering?.openaiApiKey ??
+            currentConfig.clustering.openaiApiKey,
       },
       excludeWords: Array.isArray(body.excludeWords)
-        ? body.excludeWords.filter((w: unknown) => typeof w === "string" && w.trim())
+        ? body.excludeWords.filter(
+            (w: unknown) => typeof w === "string" && w.trim()
+          )
         : currentConfig.excludeWords || [],
     };
 
