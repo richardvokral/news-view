@@ -1,0 +1,35 @@
+import { redirect } from "next/navigation";
+import { getSession } from "@/lib/auth";
+import { listSiteIds, defaultSiteId } from "@/lib/plausible";
+import { getMonitorConfig } from "@/lib/monitor/config";
+import MonitorDashboard from "@/components/monitor/MonitorDashboard";
+
+interface PageProps {
+  searchParams: Promise<{ site?: string }>;
+}
+
+export default async function MonitorPage({ searchParams }: PageProps) {
+  const session = await getSession();
+  if (!session.email) redirect("/api/logto/sign-in");
+  if (!session.sections.includes("monitor")) redirect("/no-access");
+
+  const sites = listSiteIds();
+  const params = await searchParams;
+  const requested = params.site;
+  const currentSite =
+    requested && sites.includes(requested)
+      ? requested
+      : defaultSiteId() ?? sites[0] ?? "";
+
+  const cfg = await getMonitorConfig();
+
+  return (
+    <MonitorDashboard
+      sites={sites}
+      currentSite={currentSite}
+      defaultHours={cfg.windowHours}
+      enabled={cfg.enabled}
+      isAdmin={session.isAdmin}
+    />
+  );
+}

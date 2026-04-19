@@ -1,16 +1,14 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-// Routes that require an authenticated Logto session. Section-level
-// authorization is enforced by page components and route handlers using
-// getSession() + access resolution; this middleware only checks the session
-// cookie at the edge to avoid DB lookups on every request.
 const PROTECTED_PREFIXES = [
   "/reports",
+  "/monitor",
   "/admin",
   "/api/admin",
   "/api/plausible",
   "/api/dashboard-layout",
+  "/api/monitor",
   "/no-access",
 ];
 
@@ -40,12 +38,14 @@ export function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     "/reports/:path*",
+    "/monitor/:path*",
     "/admin/:path*",
     "/api/admin/:path*",
     "/api/plausible",
     "/api/plausible/:path*",
     "/api/dashboard-layout",
     "/api/dashboard-layout/:path*",
+    "/api/monitor/:path*",
     "/no-access",
   ],
 };
