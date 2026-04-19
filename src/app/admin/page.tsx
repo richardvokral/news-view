@@ -17,6 +17,11 @@ const TILES = [
     desc: "Edit the default Plausible dashboard layout for everyone.",
   },
   {
+    href: "/admin/monitor",
+    title: "Article Monitor",
+    desc: "Enable / tune the per-article near-real-time tracker.",
+  },
+  {
     href: "/admin/settings",
     title: "App Settings",
     desc: "News pipeline API keys and clustering mode.",

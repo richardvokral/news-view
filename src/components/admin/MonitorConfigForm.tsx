@@ -1,0 +1,214 @@
+"use client";
+
+import { useState } from "react";
+import type { MonitorConfig } from "@/types/dashboard";
+
+interface Props {
+  initial: MonitorConfig;
+  sites: string[];
+}
+
+export default function MonitorConfigForm({ initial, sites }: Props) {
+  const [config, setConfig] = useState<MonitorConfig>(initial);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
+
+  function setField<K extends keyof MonitorConfig>(
+    key: K,
+    value: MonitorConfig[K]
+  ) {
+    setConfig((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function setPattern(siteId: string, pattern: string) {
+    setConfig((prev) => ({
+      ...prev,
+      sitePatterns: { ...prev.sitePatterns, [siteId]: pattern },
+    }));
+  }
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/admin/monitor-config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(config),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Save failed");
+      }
+      const data = await res.json();
+      setConfig(data.config);
+      setMessage({ type: "success", text: "Saved" });
+    } catch (err) {
+      setMessage({
+        type: "error",
+        text: err instanceof Error ? err.message : "Save failed",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={save}
+      className="space-y-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm"
+    >
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => setField("enabled", !config.enabled)}
+          className={`relative h-6 w-11 flex-shrink-0 rounded-full transition-colors ${
+            config.enabled ? "bg-blue-600" : "bg-gray-300"
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+              config.enabled ? "left-5" : "left-0.5"
+            }`}
+          />
+        </button>
+        <div>
+          <p className="text-sm font-medium text-gray-900">Enabled</p>
+          <p className="text-xs text-gray-500">
+            When off, cron ticks do nothing and no Plausible calls are made.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <NumberField
+          label="Interval (seconds)"
+          hint="Expected time between cron ticks. Floor: 60."
+          value={config.intervalSeconds}
+          onChange={(v) => setField("intervalSeconds", v)}
+          min={60}
+        />
+        <NumberField
+          label="Window (hours)"
+          hint="How recent an article must be to appear on /monitor."
+          value={config.windowHours}
+          onChange={(v) => setField("windowHours", v)}
+          min={1}
+        />
+        <NumberField
+          label="Retention (days)"
+          hint="Snapshots older than this are pruned each tick."
+          value={config.retentionDays}
+          onChange={(v) => setField("retentionDays", v)}
+          min={1}
+        />
+        <NumberField
+          label="Max Plausible calls / hour"
+          hint="Hard cap on API usage. Each tick uses one call per configured site."
+          value={config.maxRequestsPerHour}
+          onChange={(v) => setField("maxRequestsPerHour", v)}
+          min={1}
+        />
+      </div>
+
+      <div>
+        <h3 className="mb-1 text-sm font-medium text-gray-900">
+          Article URL patterns
+        </h3>
+        <p className="mb-3 text-xs text-gray-500">
+          JavaScript regex applied to the Plausible{" "}
+          <code className="rounded bg-gray-100 px-1 text-[11px]">page</code>{" "}
+          value to decide what counts as an article. Empty means &ldquo;any non-root
+          path&rdquo;. Example: <code className="rounded bg-gray-100 px-1 text-[11px]">^/(a|clanek)/</code>.
+        </p>
+        {sites.length === 0 ? (
+          <p className="text-sm text-amber-600">
+            No sites configured — set{" "}
+            <code className="rounded bg-gray-100 px-1 text-[11px]">PLAUSIBLE_SITE_IDS</code>{" "}
+            first.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {sites.map((siteId) => (
+              <div
+                key={siteId}
+                className="flex items-center gap-3"
+              >
+                <code className="w-40 rounded bg-gray-50 px-2 py-1 text-xs text-gray-700">
+                  {siteId}
+                </code>
+                <input
+                  type="text"
+                  value={config.sitePatterns[siteId] ?? ""}
+                  onChange={(e) => setPattern(siteId, e.target.value)}
+                  placeholder="^/a/"
+                  className="flex-1 rounded-md border border-gray-300 px-3 py-1.5 font-mono text-xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {config.updatedAt && (
+        <p className="text-xs text-gray-400">
+          Last updated by {config.updatedBy || "unknown"} at{" "}
+          {new Date(config.updatedAt).toLocaleString()}
+        </p>
+      )}
+
+      <div className="flex items-center gap-3">
+        <button
+          type="submit"
+          disabled={saving}
+          className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+        {message && (
+          <span
+            className={`text-sm ${
+              message.type === "success" ? "text-green-600" : "text-red-600"
+            }`}
+          >
+            {message.text}
+          </span>
+        )}
+      </div>
+    </form>
+  );
+}
+
+function NumberField({
+  label,
+  hint,
+  value,
+  onChange,
+  min,
+}: {
+  label: string;
+  hint: string;
+  value: number;
+  onChange: (v: number) => void;
+  min: number;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-medium uppercase text-gray-500">
+        {label}
+      </span>
+      <input
+        type="number"
+        value={value}
+        min={min}
+        onChange={(e) => onChange(Math.max(min, Number(e.target.value) || min))}
+        className="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm tabular-nums focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+      />
+      <span className="mt-1 block text-xs text-gray-500">{hint}</span>
+    </label>
+  );
+}
