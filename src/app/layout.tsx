@@ -4,6 +4,12 @@ import "./globals.css";
 import { getSession } from "@/lib/auth";
 import TopNav from "@/components/TopNav";
 
+// Every page in this app reads session state and/or per-user DB rows, so there
+// is nothing to statically prerender. Forcing dynamic at the root prevents
+// build-time DB calls (e.g. /admin/monitor) from failing when migrations lag
+// behind deploys.
+export const dynamic = "force-dynamic";
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
