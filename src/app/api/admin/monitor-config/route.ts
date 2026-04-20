@@ -32,6 +32,12 @@ export async function PUT(request: NextRequest) {
     if (typeof body.retentionDays === "number") clean.retentionDays = body.retentionDays;
     if (typeof body.maxRequestsPerHour === "number")
       clean.maxRequestsPerHour = body.maxRequestsPerHour;
+    if (typeof body.sourceSamplingEnabled === "boolean")
+      clean.sourceSamplingEnabled = body.sourceSamplingEnabled;
+    if (typeof body.sourceSamplingTopN === "number")
+      clean.sourceSamplingTopN = body.sourceSamplingTopN;
+    if (typeof body.trendWindowMinutes === "number")
+      clean.trendWindowMinutes = body.trendWindowMinutes;
     if (body.sitePatterns && typeof body.sitePatterns === "object") {
       const sp: Record<string, string> = {};
       for (const [k, v] of Object.entries(body.sitePatterns)) {

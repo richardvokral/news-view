@@ -24,6 +24,17 @@ export interface ArticleWithStats {
   snapshots: SnapshotRow[];
 }
 
+export interface SourceVisitorRow {
+  source: string;
+  visitors: number;
+}
+
+export interface SourceTimeseriesPoint {
+  capturedAt: string;
+  source: string;
+  visitors: number;
+}
+
 export async function upsertArticle(
   pagePath: string,
   siteId: string,
@@ -54,10 +65,25 @@ export async function insertSnapshot(
   );
 }
 
+export async function insertArticleSourceSnapshot(
+  pagePath: string,
+  capturedAt: Date,
+  source: string,
+  visitors: number
+): Promise<void> {
+  if (!hasDb()) return;
+  await getDb().query(
+    `INSERT INTO article_source_snapshots (page_path, captured_at, source, visitors)
+     VALUES ($1, $2, $3, $4)`,
+    [pagePath, capturedAt, source, visitors]
+  );
+}
+
 export async function listArticlesWithRecentStats(
   siteId: string | null,
   windowHours: number,
-  snapshotLimit = 48
+  snapshotLimit = 48,
+  pagePaths?: string[]
 ): Promise<ArticleWithStats[]> {
   if (!hasDb()) return [];
   const cutoff = new Date(Date.now() - windowHours * 3600 * 1000);
@@ -66,6 +92,10 @@ export async function listArticlesWithRecentStats(
   if (siteId) {
     params.push(siteId);
     where += ` AND site_id = $${params.length}`;
+  }
+  if (pagePaths && pagePaths.length > 0) {
+    params.push(pagePaths);
+    where += ` AND page_path = ANY($${params.length}::text[])`;
   }
   const { rows: articles } = await getDb().query<{
     page_path: string;
@@ -127,11 +157,74 @@ export async function listArticlesWithRecentStats(
   });
 }
 
+/**
+ * Most recent visitors-per-source for a given article, using the latest
+ * captured_at per source within the window.
+ */
+export async function listLatestSourcesForArticle(
+  pagePath: string,
+  windowHours: number,
+  limit = 10
+): Promise<SourceVisitorRow[]> {
+  if (!hasDb()) return [];
+  const cutoff = new Date(Date.now() - windowHours * 3600 * 1000);
+  const { rows } = await getDb().query<{
+    source: string;
+    visitors: number;
+  }>(
+    `SELECT DISTINCT ON (source) source, visitors
+       FROM article_source_snapshots
+      WHERE page_path = $1 AND captured_at >= $2
+      ORDER BY source, captured_at DESC`,
+    [pagePath, cutoff]
+  );
+  return rows
+    .map((r) => ({ source: r.source, visitors: Number(r.visitors) || 0 }))
+    .sort((a, b) => b.visitors - a.visitors)
+    .slice(0, limit);
+}
+
+export async function listSourceTimeseriesForArticle(
+  pagePath: string,
+  windowHours: number
+): Promise<SourceTimeseriesPoint[]> {
+  if (!hasDb()) return [];
+  const cutoff = new Date(Date.now() - windowHours * 3600 * 1000);
+  const { rows } = await getDb().query<{
+    captured_at: string;
+    source: string;
+    visitors: number;
+  }>(
+    `SELECT captured_at, source, visitors
+       FROM article_source_snapshots
+      WHERE page_path = $1 AND captured_at >= $2
+      ORDER BY captured_at ASC`,
+    [pagePath, cutoff]
+  );
+  return rows.map((r) => ({
+    capturedAt: r.captured_at,
+    source: r.source,
+    visitors: Number(r.visitors) || 0,
+  }));
+}
+
 export async function pruneSnapshots(retentionDays: number): Promise<number> {
   if (!hasDb()) return 0;
   const cutoff = new Date(Date.now() - retentionDays * 24 * 3600 * 1000);
   const result = await getDb().query(
     `DELETE FROM article_metric_snapshots WHERE captured_at < $1`,
+    [cutoff]
+  );
+  return result.rowCount ?? 0;
+}
+
+export async function pruneArticleSourceSnapshots(
+  retentionDays: number
+): Promise<number> {
+  if (!hasDb()) return 0;
+  const cutoff = new Date(Date.now() - retentionDays * 24 * 3600 * 1000);
+  const result = await getDb().query(
+    `DELETE FROM article_source_snapshots WHERE captured_at < $1`,
     [cutoff]
   );
   return result.rowCount ?? 0;

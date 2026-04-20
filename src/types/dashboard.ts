@@ -136,6 +136,9 @@ export interface MonitorConfig {
   retentionDays: number;
   maxRequestsPerHour: number;
   sitePatterns: Record<string, string>;
+  sourceSamplingEnabled: boolean;
+  sourceSamplingTopN: number;
+  trendWindowMinutes: number;
   updatedBy: string | null;
   updatedAt: string | null;
 }
@@ -147,6 +150,9 @@ export const DEFAULT_MONITOR_CONFIG: MonitorConfig = {
   retentionDays: 7,
   maxRequestsPerHour: 240,
   sitePatterns: {},
+  sourceSamplingEnabled: false,
+  sourceSamplingTopN: 10,
+  trendWindowMinutes: 60,
   updatedBy: null,
   updatedAt: null,
 };

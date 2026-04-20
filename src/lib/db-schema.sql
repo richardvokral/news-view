@@ -69,6 +69,19 @@ CREATE TABLE IF NOT EXISTS article_metric_snapshots (
 CREATE INDEX IF NOT EXISTS article_metric_snapshots_page_idx
   ON article_metric_snapshots(page_path, captured_at DESC);
 
+-- Per-article source attribution snapshots (optional; populated when
+-- monitor_config.source_sampling_enabled is true).
+CREATE TABLE IF NOT EXISTS article_source_snapshots (
+  id BIGSERIAL PRIMARY KEY,
+  page_path TEXT NOT NULL REFERENCES article_monitors(page_path) ON DELETE CASCADE,
+  captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  source TEXT NOT NULL,
+  visitors INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS article_source_snapshots_page_idx
+  ON article_source_snapshots(page_path, captured_at DESC);
+
 -- Monitor config (singleton). Edited via /admin/monitor.
 CREATE TABLE IF NOT EXISTS monitor_config (
   id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
@@ -78,6 +91,15 @@ CREATE TABLE IF NOT EXISTS monitor_config (
   retention_days INTEGER NOT NULL DEFAULT 7,
   max_requests_per_hour INTEGER NOT NULL DEFAULT 240,
   site_patterns JSONB NOT NULL DEFAULT '{}'::jsonb,
+  source_sampling_enabled BOOLEAN NOT NULL DEFAULT false,
+  source_sampling_top_n INTEGER NOT NULL DEFAULT 10,
+  trend_window_minutes INTEGER NOT NULL DEFAULT 60,
   updated_by TEXT,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Backfill for existing installs.
+ALTER TABLE monitor_config
+  ADD COLUMN IF NOT EXISTS source_sampling_enabled BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS source_sampling_top_n INTEGER NOT NULL DEFAULT 10,
+  ADD COLUMN IF NOT EXISTS trend_window_minutes INTEGER NOT NULL DEFAULT 60;

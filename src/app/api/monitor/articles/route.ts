@@ -20,8 +20,20 @@ export async function GET(request: NextRequest) {
   const hours = hoursParam ? Math.min(Math.max(1, Number(hoursParam)), 168) : defaultWindow;
   const snapshotsParam = request.nextUrl.searchParams.get("snapshots");
   const snapshotLimit = snapshotsParam ? Math.min(Math.max(2, Number(snapshotsParam)), 200) : 48;
+  const pagesParam = request.nextUrl.searchParams.get("pages");
+  const pagePaths = pagesParam
+    ? pagesParam
+        .split(",")
+        .map((p) => p.trim())
+        .filter(Boolean)
+    : undefined;
 
-  const articles = await listArticlesWithRecentStats(siteId, hours, snapshotLimit);
+  const articles = await listArticlesWithRecentStats(
+    siteId,
+    hours,
+    snapshotLimit,
+    pagePaths
+  );
   return NextResponse.json({
     articles,
     windowHours: hours,

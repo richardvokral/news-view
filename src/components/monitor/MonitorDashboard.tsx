@@ -1,8 +1,18 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import ArticleSparkline from "./ArticleSparkline";
+import ArticleRowDetails from "./ArticleRowDetails";
+import TopSourcesWidget from "./TopSourcesWidget";
+import MonitorFilters, {
+  applyNumericFilter,
+  type FiltersState,
+  type NumericFilter,
+  type NumericOp,
+} from "./MonitorFilters";
 import SiteSelector from "@/components/reports/SiteSelector";
+import { computeTrendScore, formatTrendScore } from "@/lib/monitor/trend";
 
 interface Snapshot {
   capturedAt: string;
@@ -14,6 +24,7 @@ interface Article {
   pagePath: string;
   siteId: string;
   firstSeenAt: string;
+  lastCheckedAt: string | null;
   currentVisitors: number;
   currentPageviews: number;
   snapshots: Snapshot[];
@@ -22,10 +33,15 @@ interface Article {
 interface Props {
   sites: string[];
   currentSite: string;
+  siteBaseUrl: string;
   defaultHours: number;
+  trendWindowMinutes: number;
   enabled: boolean;
   isAdmin: boolean;
 }
+
+type SortKey = "article" | "visitors" | "pageviews" | "firstSeen" | "trend";
+type SortDir = "asc" | "desc";
 
 const HOUR_OPTIONS = [
   { value: 1, label: "1h" },
@@ -33,6 +49,8 @@ const HOUR_OPTIONS = [
   { value: 24, label: "24h" },
   { value: 72, label: "3d" },
 ];
+
+const NUMERIC_OPS: readonly NumericOp[] = [">", ">=", "<", "<="] as const;
 
 function parseArticleName(page: string): string {
   const trimmed = page.replace(/^\//, "");
@@ -54,17 +72,172 @@ function relTime(isoDate: string): string {
   return `${days}d ago`;
 }
 
+function firstSeenCutoffFor(hoursWithin: number | null): number | null {
+  if (!hoursWithin) return null;
+  return Date.now() - hoursWithin * 3600_000;
+}
+
+function parseNumericParam(
+  params: URLSearchParams,
+  key: string
+): NumericFilter | null {
+  const raw = params.get(key);
+  if (!raw) return null;
+  const match = raw.match(/^(>=|<=|>|<)(-?\d+(?:\.\d+)?)$/);
+  if (!match) return null;
+  const op = match[1] as NumericOp;
+  if (!NUMERIC_OPS.includes(op)) return null;
+  const value = Number(match[2]);
+  if (!Number.isFinite(value)) return null;
+  return { op, value };
+}
+
+function serializeNumeric(filter: NumericFilter | null): string | null {
+  if (!filter) return null;
+  return `${filter.op}${filter.value}`;
+}
+
+function filtersFromParams(params: URLSearchParams): FiltersState {
+  const firstSeen = params.get("fs");
+  return {
+    article: params.get("q") ?? "",
+    visitors: parseNumericParam(params, "fv"),
+    pageviews: parseNumericParam(params, "fp"),
+    trend: parseNumericParam(params, "ft"),
+    firstSeenWithinHours: firstSeen ? Number(firstSeen) : null,
+  };
+}
+
+function sortFromParams(params: URLSearchParams): {
+  key: SortKey;
+  dir: SortDir;
+} {
+  const key = (params.get("sort") as SortKey | null) ?? "visitors";
+  const dir = (params.get("dir") as SortDir | null) ?? "desc";
+  const validKey: SortKey = (
+    ["article", "visitors", "pageviews", "firstSeen", "trend"] as SortKey[]
+  ).includes(key)
+    ? key
+    : "visitors";
+  const validDir: SortDir = dir === "asc" ? "asc" : "desc";
+  return { key: validKey, dir: validDir };
+}
+
 export default function MonitorDashboard({
   sites,
   currentSite,
+  siteBaseUrl,
   defaultHours,
+  trendWindowMinutes,
   enabled,
   isAdmin,
 }: Props) {
-  const [hours, setHours] = useState(defaultHours);
-  const [articles, setArticles] = useState<Article[]>([]);
-  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const hoursParam = searchParams.get("hours");
+  const hours = hoursParam ? Math.max(1, Number(hoursParam)) : defaultHours;
+  const { key: sortKey, dir: sortDir } = sortFromParams(searchParams);
+  const filters = useMemo(
+    () => filtersFromParams(searchParams),
+    [searchParams]
+  );
+  const sourceFilter = searchParams.get("source");
+  const expandedPath = searchParams.get("expand");
+
+  const [articles, setArticles] = useState<Article[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sourcePagePaths, setSourcePagePaths] = useState<{
+    source: string;
+    pagePaths: string[];
+  } | null>(null);
+  const loading = articles === null && error === null;
+  const sourceLoading =
+    sourceFilter !== null &&
+    (sourcePagePaths === null || sourcePagePaths.source !== sourceFilter);
+
+  const updateParams = useCallback(
+    (mutate: (params: URLSearchParams) => void, options?: { replace?: boolean }) => {
+      const next = new URLSearchParams(searchParams.toString());
+      mutate(next);
+      const qs = next.toString();
+      const target = qs ? `${pathname}?${qs}` : pathname;
+      if (options?.replace) {
+        router.replace(target, { scroll: false });
+      } else {
+        router.push(target, { scroll: false });
+      }
+    },
+    [router, pathname, searchParams]
+  );
+
+  const setSortParam = useCallback(
+    (key: SortKey) => {
+      updateParams((params) => {
+        const current = params.get("sort");
+        const currentDir = params.get("dir");
+        if (current === key) {
+          params.set("dir", currentDir === "asc" ? "desc" : "asc");
+        } else {
+          params.set("sort", key);
+          params.set("dir", key === "article" || key === "firstSeen" ? "asc" : "desc");
+        }
+      });
+    },
+    [updateParams]
+  );
+
+  const setFiltersParam = useCallback(
+    (next: FiltersState) => {
+      updateParams((params) => {
+        if (next.article) params.set("q", next.article);
+        else params.delete("q");
+        const v = serializeNumeric(next.visitors);
+        if (v) params.set("fv", v);
+        else params.delete("fv");
+        const p = serializeNumeric(next.pageviews);
+        if (p) params.set("fp", p);
+        else params.delete("fp");
+        const t = serializeNumeric(next.trend);
+        if (t) params.set("ft", t);
+        else params.delete("ft");
+        if (next.firstSeenWithinHours)
+          params.set("fs", String(next.firstSeenWithinHours));
+        else params.delete("fs");
+      }, { replace: true });
+    },
+    [updateParams]
+  );
+
+  const setHours = useCallback(
+    (value: number) => {
+      updateParams((params) => {
+        params.set("hours", String(value));
+      }, { replace: true });
+    },
+    [updateParams]
+  );
+
+  const setSourceFilter = useCallback(
+    (source: string | null) => {
+      updateParams((params) => {
+        if (source) params.set("source", source);
+        else params.delete("source");
+      });
+    },
+    [updateParams]
+  );
+
+  const setExpandedPath = useCallback(
+    (pagePath: string | null) => {
+      updateParams((params) => {
+        if (pagePath) params.set("expand", pagePath);
+        else params.delete("expand");
+      }, { replace: true });
+    },
+    [updateParams]
+  );
 
   const fetchArticles = useCallback(() => {
     if (!enabled || !currentSite) return;
@@ -80,28 +253,126 @@ export default function MonitorDashboard({
         setArticles(data.articles || []);
         setError(null);
       })
-      .catch((err) => setError(String(err)))
-      .finally(() => setLoading(false));
+      .catch((err) => setError(String(err)));
   }, [currentSite, hours, enabled]);
 
   useEffect(() => {
-    setLoading(true);
     fetchArticles();
     if (!enabled) return;
     const interval = setInterval(fetchArticles, 60_000);
     return () => clearInterval(interval);
   }, [fetchArticles, enabled]);
 
-  const sorted = useMemo(
-    () => [...articles].sort((a, b) => b.currentVisitors - a.currentVisitors),
-    [articles]
+  // Fetch page paths attributable to the active source.
+  const sourceReq = useRef<AbortController | null>(null);
+  useEffect(() => {
+    sourceReq.current?.abort();
+    if (!sourceFilter || !currentSite) return;
+    const ctrl = new AbortController();
+    sourceReq.current = ctrl;
+    const params = new URLSearchParams({
+      site: currentSite,
+      hours: String(hours),
+      source: sourceFilter,
+    });
+    fetch(`/api/monitor/sources?${params}`, { signal: ctrl.signal })
+      .then((r) => (r.ok ? r.json() : Promise.reject(`HTTP ${r.status}`)))
+      .then((d) =>
+        setSourcePagePaths({
+          source: sourceFilter,
+          pagePaths: (d.pagePaths || []) as string[],
+        })
+      )
+      .catch((e) => {
+        if ((e as { name?: string }).name === "AbortError") return;
+        setSourcePagePaths({ source: sourceFilter, pagePaths: [] });
+      });
+    return () => ctrl.abort();
+  }, [sourceFilter, currentSite, hours]);
+
+  const withTrend = useMemo(
+    () =>
+      (articles ?? []).map((a) => ({
+        ...a,
+        trendScore: computeTrendScore(a.snapshots, trendWindowMinutes),
+      })),
+    [articles, trendWindowMinutes]
   );
 
+  const filtered = useMemo(() => {
+    const needle = filters.article.trim().toLowerCase();
+    const firstSeenCutoff = firstSeenCutoffFor(filters.firstSeenWithinHours);
+    const sourceAllow =
+      sourceFilter && sourcePagePaths?.source === sourceFilter
+        ? new Set(sourcePagePaths.pagePaths)
+        : null;
+    return withTrend.filter((a) => {
+      if (needle) {
+        const hay = `${a.pagePath} ${parseArticleName(a.pagePath)}`.toLowerCase();
+        if (!hay.includes(needle)) return false;
+      }
+      if (!applyNumericFilter(a.currentVisitors, filters.visitors)) return false;
+      if (!applyNumericFilter(a.currentPageviews, filters.pageviews))
+        return false;
+      if (!applyNumericFilter(a.trendScore, filters.trend)) return false;
+      if (firstSeenCutoff !== null) {
+        if (new Date(a.firstSeenAt).getTime() < firstSeenCutoff) return false;
+      }
+      if (sourceAllow) {
+        if (!sourceAllow.has(a.pagePath)) return false;
+      }
+      return true;
+    });
+  }, [withTrend, filters, sourceFilter, sourcePagePaths]);
+
+  const sorted = useMemo(() => {
+    const list = [...filtered];
+    const dirMul = sortDir === "asc" ? 1 : -1;
+    list.sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case "article":
+          cmp = parseArticleName(a.pagePath).localeCompare(
+            parseArticleName(b.pagePath)
+          );
+          break;
+        case "visitors":
+          cmp = a.currentVisitors - b.currentVisitors;
+          break;
+        case "pageviews":
+          cmp = a.currentPageviews - b.currentPageviews;
+          break;
+        case "firstSeen":
+          cmp =
+            new Date(a.firstSeenAt).getTime() -
+            new Date(b.firstSeenAt).getTime();
+          break;
+        case "trend":
+          cmp = a.trendScore - b.trendScore;
+          break;
+      }
+      return cmp * dirMul;
+    });
+    return list;
+  }, [filtered, sortKey, sortDir]);
+
   const totals = useMemo(() => {
-    const visitors = articles.reduce((s, a) => s + a.currentVisitors, 0);
-    const pageviews = articles.reduce((s, a) => s + a.currentPageviews, 0);
-    return { visitors, pageviews, top: sorted[0] };
-  }, [articles, sorted]);
+    const list = articles ?? [];
+    const visitors = list.reduce((s, a) => s + a.currentVisitors, 0);
+    const pageviews = list.reduce((s, a) => s + a.currentPageviews, 0);
+    const top = [...list].sort(
+      (a, b) => b.currentVisitors - a.currentVisitors
+    )[0];
+    return { visitors, pageviews, top };
+  }, [articles]);
+
+  const hasActiveFilters =
+    filters.article !== "" ||
+    filters.visitors !== null ||
+    filters.pageviews !== null ||
+    filters.trend !== null ||
+    filters.firstSeenWithinHours !== null ||
+    sourceFilter !== null;
 
   return (
     <div>
@@ -154,7 +425,7 @@ export default function MonitorDashboard({
           <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
             <MetricCard
               label="Articles seen"
-              value={articles.length.toLocaleString()}
+              value={(articles ?? []).length.toLocaleString()}
             />
             <MetricCard
               label="Total visitors (today)"
@@ -175,6 +446,13 @@ export default function MonitorDashboard({
             />
           </div>
 
+          <TopSourcesWidget
+            site={currentSite}
+            hours={hours}
+            activeSource={sourceFilter}
+            onSelect={setSourceFilter}
+          />
+
           {loading ? (
             <div className="rounded-xl border border-gray-200 bg-white p-10 text-center text-sm text-gray-500">
               Loading…
@@ -183,54 +461,97 @@ export default function MonitorDashboard({
             <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
               {error}
             </div>
-          ) : sorted.length === 0 ? (
-            <div className="rounded-xl border border-gray-200 bg-white p-10 text-center text-sm text-gray-500">
-              No articles monitored yet for {currentSite} in the last {hours}h.
-              The next cron tick will populate this.
-            </div>
           ) : (
             <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 text-left text-xs font-medium uppercase text-gray-500">
-                    <th className="px-5 py-3">Article</th>
-                    <th className="px-2 py-3 text-right">Visitors</th>
-                    <th className="px-2 py-3 text-right">Pageviews</th>
-                    <th className="px-5 py-3 text-right">First seen</th>
-                    <th className="px-5 py-3">Trend</th>
+                    <SortableHeader
+                      label="Article"
+                      sortKey="article"
+                      active={sortKey}
+                      dir={sortDir}
+                      onSort={setSortParam}
+                      className="px-5 py-3"
+                    />
+                    <SortableHeader
+                      label="Visitors"
+                      sortKey="visitors"
+                      active={sortKey}
+                      dir={sortDir}
+                      onSort={setSortParam}
+                      align="right"
+                      className="px-2 py-3"
+                    />
+                    <SortableHeader
+                      label="Pageviews"
+                      sortKey="pageviews"
+                      active={sortKey}
+                      dir={sortDir}
+                      onSort={setSortParam}
+                      align="right"
+                      className="px-2 py-3"
+                    />
+                    <SortableHeader
+                      label="First seen"
+                      sortKey="firstSeen"
+                      active={sortKey}
+                      dir={sortDir}
+                      onSort={setSortParam}
+                      align="right"
+                      className="px-5 py-3"
+                    />
+                    <SortableHeader
+                      label="Trend"
+                      sortKey="trend"
+                      active={sortKey}
+                      dir={sortDir}
+                      onSort={setSortParam}
+                      className="px-5 py-3"
+                    />
                   </tr>
+                  <MonitorFilters
+                    filters={filters}
+                    onChange={setFiltersParam}
+                  />
                 </thead>
                 <tbody>
-                  {sorted.map((a, i) => (
-                    <tr
-                      key={a.pagePath}
-                      className={i % 2 === 0 ? "bg-white" : "bg-gray-50/50"}
-                    >
+                  {sorted.length === 0 ? (
+                    <tr>
                       <td
-                        className="max-w-0 truncate px-5 py-3 text-gray-800"
-                        title={a.pagePath}
+                        colSpan={5}
+                        className="px-5 py-10 text-center text-sm text-gray-500"
                       >
-                        <div className="font-medium">
-                          {parseArticleName(a.pagePath)}
-                        </div>
-                        <div className="truncate text-xs text-gray-400">
-                          {a.pagePath}
-                        </div>
-                      </td>
-                      <td className="px-2 py-3 text-right text-base font-semibold tabular-nums text-gray-900">
-                        {a.currentVisitors.toLocaleString()}
-                      </td>
-                      <td className="px-2 py-3 text-right tabular-nums text-gray-600">
-                        {a.currentPageviews.toLocaleString()}
-                      </td>
-                      <td className="whitespace-nowrap px-5 py-3 text-right text-xs text-gray-500">
-                        {relTime(a.firstSeenAt)}
-                      </td>
-                      <td className="px-5 py-3">
-                        <ArticleSparkline snapshots={a.snapshots} />
+                        {sourceLoading
+                          ? "Resolving source filter…"
+                          : hasActiveFilters
+                          ? "No articles match the current filters."
+                          : `No articles monitored yet for ${currentSite} in the last ${hours}h.`}
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    sorted.map((a, i) => {
+                      const expanded = expandedPath === a.pagePath;
+                      const liveUrl = `${siteBaseUrl}${
+                        a.pagePath.startsWith("/") ? a.pagePath : `/${a.pagePath}`
+                      }`;
+                      const trendLabel = formatTrendScore(a.trendScore);
+                      return (
+                        <ArticleRow
+                          key={a.pagePath}
+                          article={a}
+                          expanded={expanded}
+                          onToggle={() =>
+                            setExpandedPath(expanded ? null : a.pagePath)
+                          }
+                          liveUrl={liveUrl}
+                          trendLabel={trendLabel}
+                          hours={hours}
+                          zebra={i % 2 === 0}
+                        />
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
@@ -238,6 +559,161 @@ export default function MonitorDashboard({
         </>
       )}
     </div>
+  );
+}
+
+function SortableHeader({
+  label,
+  sortKey,
+  active,
+  dir,
+  onSort,
+  align,
+  className,
+}: {
+  label: string;
+  sortKey: SortKey;
+  active: SortKey;
+  dir: SortDir;
+  onSort: (key: SortKey) => void;
+  align?: "right";
+  className?: string;
+}) {
+  const isActive = active === sortKey;
+  const indicator = isActive ? (dir === "asc" ? "▲" : "▼") : "";
+  return (
+    <th className={className}>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={`flex w-full items-center gap-1 font-medium uppercase tracking-wider ${
+          align === "right" ? "justify-end" : "justify-start"
+        } ${isActive ? "text-gray-900" : "text-gray-500 hover:text-gray-700"}`}
+      >
+        <span>{label}</span>
+        <span className="text-[10px]">{indicator}</span>
+      </button>
+    </th>
+  );
+}
+
+function ExternalIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-3.5 w-3.5"
+      aria-hidden="true"
+    >
+      <path d="M15 3h6v6" />
+      <path d="M10 14 21 3" />
+      <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" />
+    </svg>
+  );
+}
+
+interface ArticleRowProps {
+  article: Article & { trendScore: number };
+  expanded: boolean;
+  onToggle: () => void;
+  liveUrl: string;
+  trendLabel: string;
+  hours: number;
+  zebra: boolean;
+}
+
+function ArticleRow({
+  article: a,
+  expanded,
+  onToggle,
+  liveUrl,
+  trendLabel,
+  hours,
+  zebra,
+}: ArticleRowProps) {
+  return (
+    <>
+      <tr
+        onClick={onToggle}
+        className={`cursor-pointer transition-colors ${
+          expanded ? "bg-blue-50/60" : zebra ? "bg-white" : "bg-gray-50/50"
+        } hover:bg-blue-50/40`}
+      >
+        <td
+          className="max-w-0 truncate px-5 py-3 text-gray-800"
+          title={a.pagePath}
+        >
+          <div className="flex items-center gap-2">
+            <span className="truncate font-medium">
+              {parseArticleName(a.pagePath)}
+            </span>
+            <a
+              href={liveUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              title={liveUrl}
+              className="shrink-0 text-gray-400 hover:text-blue-600"
+              aria-label="Open live article"
+            >
+              <ExternalIcon />
+            </a>
+          </div>
+          <div className="truncate text-xs text-gray-400">{a.pagePath}</div>
+        </td>
+        <td className="px-2 py-3 text-right text-base font-semibold tabular-nums text-gray-900">
+          {a.currentVisitors.toLocaleString()}
+        </td>
+        <td className="px-2 py-3 text-right tabular-nums text-gray-600">
+          {a.currentPageviews.toLocaleString()}
+        </td>
+        <td className="whitespace-nowrap px-5 py-3 text-right text-xs text-gray-500">
+          {relTime(a.firstSeenAt)}
+        </td>
+        <td className="px-5 py-3">
+          <div className="flex items-center gap-3">
+            <ArticleSparkline snapshots={a.snapshots} />
+            <span
+              className={`rounded px-1.5 py-0.5 text-[11px] font-semibold tabular-nums ${
+                a.trendScore > 0
+                  ? "bg-green-50 text-green-700"
+                  : a.trendScore < 0
+                  ? "bg-red-50 text-red-700"
+                  : "bg-gray-100 text-gray-500"
+              }`}
+              title={`Trend (per minute over last ${Math.round(
+                60
+              )}m window)`}
+            >
+              {trendLabel}
+            </span>
+          </div>
+        </td>
+      </tr>
+      {expanded && (
+        <tr className="border-t border-gray-100">
+          <td colSpan={5} className="p-0">
+            <ArticleRowDetails
+              pagePath={a.pagePath}
+              siteId={a.siteId}
+              hours={hours}
+              snapshots={a.snapshots}
+              liveUrl={liveUrl}
+              firstSeenAt={a.firstSeenAt}
+              lastCheckedAt={a.lastCheckedAt}
+              currentVisitors={a.currentVisitors}
+              currentPageviews={a.currentPageviews}
+              trendLabel={trendLabel}
+            />
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 

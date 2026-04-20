@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { listSiteIds, defaultSiteId } from "@/lib/plausible";
 import { getMonitorConfig } from "@/lib/monitor/config";
+import { siteBaseUrl } from "@/lib/monitor/site-urls";
 import MonitorDashboard from "@/components/monitor/MonitorDashboard";
 
 interface PageProps {
@@ -27,7 +28,9 @@ export default async function MonitorPage({ searchParams }: PageProps) {
     <MonitorDashboard
       sites={sites}
       currentSite={currentSite}
+      siteBaseUrl={currentSite ? siteBaseUrl(currentSite) : ""}
       defaultHours={cfg.windowHours}
+      trendWindowMinutes={cfg.trendWindowMinutes}
       enabled={cfg.enabled}
       isAdmin={session.isAdmin}
     />

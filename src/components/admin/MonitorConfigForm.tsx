@@ -11,8 +11,8 @@ interface Props {
 interface TickResult {
   ok: boolean;
   skippedReason?: string;
-  sites?: { siteId: string; articles: number }[];
-  pruned?: { snapshots: number; monitors: number };
+  sites?: { siteId: string; articles: number; sources?: number }[];
+  pruned?: { snapshots: number; monitors: number; sources?: number };
   requestsThisHour?: number;
   error?: string;
 }
@@ -137,11 +137,57 @@ export default function MonitorConfigForm({ initial, sites }: Props) {
         />
         <NumberField
           label="Max Plausible calls / hour"
-          hint="Hard cap on API usage. Each tick uses one call per configured site."
+          hint="Hard cap on API usage. Each tick uses one call per configured site (plus N per source-sampled article when enabled)."
           value={config.maxRequestsPerHour}
           onChange={(v) => setField("maxRequestsPerHour", v)}
           min={1}
         />
+        <NumberField
+          label="Trend window (minutes)"
+          hint="Window used to compute the per-article trend KPI on /monitor."
+          value={config.trendWindowMinutes}
+          onChange={(v) => setField("trendWindowMinutes", v)}
+          min={5}
+        />
+      </div>
+
+      <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-4">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() =>
+              setField("sourceSamplingEnabled", !config.sourceSamplingEnabled)
+            }
+            className={`relative h-6 w-11 flex-shrink-0 rounded-full transition-colors ${
+              config.sourceSamplingEnabled ? "bg-blue-600" : "bg-gray-300"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                config.sourceSamplingEnabled ? "left-5" : "left-0.5"
+              }`}
+            />
+          </button>
+          <div>
+            <p className="text-sm font-medium text-gray-900">
+              Per-article source sampling
+            </p>
+            <p className="text-xs text-gray-500">
+              Each tick, pull a visit:source breakdown for the top N articles so
+              the monitor expansion panel can show stored source data. When off,
+              the expansion panel falls back to one on-demand Plausible call.
+            </p>
+          </div>
+        </div>
+        <div className="mt-3 max-w-xs">
+          <NumberField
+            label="Top N articles to sample"
+            hint="One additional Plausible call per article per tick per site."
+            value={config.sourceSamplingTopN}
+            onChange={(v) => setField("sourceSamplingTopN", v)}
+            min={1}
+          />
+        </div>
       </div>
 
       <div>
@@ -244,11 +290,14 @@ export default function MonitorConfigForm({ initial, sites }: Props) {
                   <li key={s.siteId}>
                     <code className="rounded bg-white px-1">{s.siteId}</code>
                     : {s.articles} article{s.articles === 1 ? "" : "s"}
+                    {typeof s.sources === "number" &&
+                      `, ${s.sources} source row${s.sources === 1 ? "" : "s"}`}
                   </li>
                 ))}
                 <li>
-                  Pruned snapshots: {tickResult.pruned?.snapshots ?? 0}, stale
-                  monitors: {tickResult.pruned?.monitors ?? 0}
+                  Pruned snapshots: {tickResult.pruned?.snapshots ?? 0}, sources:{" "}
+                  {tickResult.pruned?.sources ?? 0}, stale monitors:{" "}
+                  {tickResult.pruned?.monitors ?? 0}
                 </li>
                 <li>
                   Plausible calls this hour:{" "}
