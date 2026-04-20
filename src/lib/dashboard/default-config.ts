@@ -38,7 +38,7 @@ export const defaultDashboardConfig: WidgetConfig[] = [
     id: "countries",
     type: "breakdown",
     title: "Countries",
-    dimension: "visit:country_name",
+    dimension: "visit:country",
     metric: "visitors",
     limit: 10,
   },

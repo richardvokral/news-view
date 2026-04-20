@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
       ? Math.min(Math.max(1, Number(hoursParam)), 168)
       : cfg.coverageWindowHours;
 
-    const { externals, analysisByExternalId, ourTitles } =
+    const { externals, analysisByExternalId, ourArticles } =
       await listCoverageForSite(site, hours);
 
     const uncovered: Array<{
@@ -46,6 +46,8 @@ export async function GET(request: NextRequest) {
       {
         ourPath: string;
         ourTitle: string;
+        ourFirstSeenAt: string | null;
+        ourPubDate: string | null;
         matches: Array<{
           externalId: number;
           feedSource: string;
@@ -74,12 +76,14 @@ export async function GET(request: NextRequest) {
       } else {
         const primary = a.matchedOurPaths[0];
         if (!primary) continue;
-        const ourTitle = ourTitles.get(primary) ?? primary;
+        const ourMeta = ourArticles.get(primary);
         const bucket =
           coveredBuckets.get(primary) ??
           {
             ourPath: primary,
-            ourTitle,
+            ourTitle: ourMeta?.title ?? primary,
+            ourFirstSeenAt: ourMeta?.firstSeenAt ?? null,
+            ourPubDate: ourMeta?.pubDate ?? null,
             matches: [],
           };
         bucket.matches.push({
@@ -104,6 +108,8 @@ export async function GET(request: NextRequest) {
     const covered = Array.from(coveredBuckets.values()).map((b) => ({
       ourPath: b.ourPath,
       ourTitle: b.ourTitle,
+      ourFirstSeenAt: b.ourFirstSeenAt,
+      ourPubDate: b.ourPubDate,
       matches: b.matches.slice(0, 3),
       matchCount: b.matches.length,
       maxImportance: b.matches.reduce(

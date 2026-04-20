@@ -25,6 +25,8 @@ interface CoveredMatch {
 interface CoveredRow {
   ourPath: string;
   ourTitle: string;
+  ourFirstSeenAt: string | null;
+  ourPubDate: string | null;
   matches: CoveredMatch[];
   matchCount: number;
   maxImportance: number;
@@ -346,6 +348,12 @@ export default function CoverageTab({ site, siteBaseUrl, isAdmin }: Props) {
             ) : (
               coveredSlice.map((row) => {
                 const ourLink = `${siteBaseUrl}${row.ourPath}`;
+                const ourWhen = row.ourPubDate ?? row.ourFirstSeenAt;
+                const ourWhenSource: "rss" | "detected" | null = row.ourPubDate
+                  ? "rss"
+                  : row.ourFirstSeenAt
+                  ? "detected"
+                  : null;
                 return (
                   <tr key={row.ourPath} className="border-b border-gray-50 align-top">
                     <td className="max-w-[28rem] px-5 py-2">
@@ -357,6 +365,24 @@ export default function CoverageTab({ site, siteBaseUrl, isAdmin }: Props) {
                       >
                         {row.ourTitle}
                       </a>
+                      {ourWhen && (
+                        <div
+                          className="mt-0.5 text-[10px] text-gray-500"
+                          title={
+                            ourWhenSource === "rss"
+                              ? `Published on our RSS at ${ourWhen}`
+                              : `First detected in Plausible at ${ourWhen}`
+                          }
+                        >
+                          {ourWhenSource === "rss" ? "Published " : "First seen "}
+                          {fmtDate(ourWhen)}
+                          {ourWhenSource === "detected" && (
+                            <span className="ml-1 text-gray-400">
+                              (no RSS pub date)
+                            </span>
+                          )}
+                        </div>
+                      )}
                       <div className="truncate text-[10px] text-gray-400">
                         {row.ourPath}
                       </div>

@@ -127,13 +127,14 @@ export async function insertArticleTitle(
   siteId: string,
   capturedAt: Date,
   title: string,
-  imageUrl: string | null
+  imageUrl: string | null,
+  pubDate: Date | null = null
 ): Promise<void> {
   if (!hasDb()) return;
   await getDb().query(
-    `INSERT INTO article_titles (page_path, site_id, captured_at, title, image_url)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [pagePath, siteId, capturedAt, title, imageUrl]
+    `INSERT INTO article_titles (page_path, site_id, captured_at, title, image_url, pub_date)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [pagePath, siteId, capturedAt, title, imageUrl, pubDate]
   );
 }
 

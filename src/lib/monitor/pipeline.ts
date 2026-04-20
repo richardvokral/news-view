@@ -175,12 +175,18 @@ export async function runMonitorTick(): Promise<TickResult> {
             const imageChanged =
               !latest || (latest.imageUrl ?? null) !== (rssItem.imageUrl ?? null);
             if (titleChanged || imageChanged) {
+              const parsedPubDate = rssItem.pubDate
+                ? new Date(rssItem.pubDate)
+                : null;
               await insertArticleTitle(
                 row.page,
                 siteId,
                 now,
                 rssItem.title,
-                rssItem.imageUrl
+                rssItem.imageUrl,
+                parsedPubDate && !Number.isNaN(parsedPubDate.getTime())
+                  ? parsedPubDate
+                  : null
               );
               titlesWritten += 1;
             }

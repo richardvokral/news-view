@@ -325,6 +325,12 @@ export async function runCoverageTick(
   };
 }
 
+export interface OurArticleMeta {
+  title: string;
+  firstSeenAt: string | null;
+  pubDate: string | null;
+}
+
 /**
  * Page paths we've stored titles for. Used by the list endpoint to show our
  * title alongside matched external ones.
@@ -345,13 +351,13 @@ export async function listCoverageForSite(
       model: string | null;
     }
   >;
-  ourTitles: Map<string, string>;
+  ourArticles: Map<string, OurArticleMeta>;
 }> {
   if (!hasDb()) {
     return {
       externals: [],
       analysisByExternalId: new Map(),
-      ourTitles: new Map(),
+      ourArticles: new Map(),
     };
   }
   const externals = await listRecentExternals(windowHours);
@@ -401,21 +407,86 @@ export async function listCoverageForSite(
         .filter(Boolean)
     )
   );
-  const ourTitles = new Map<string, string>();
+  const ourArticles = new Map<string, OurArticleMeta>();
   if (matchedPaths.length > 0) {
-    const { rows } = await getDb().query<{
+    // Latest title row per matched page.
+    const { rows: titleRows } = await getDb().query<{
       page_path: string;
       title: string;
+      pub_date: string | Date | null;
     }>(
-      `SELECT DISTINCT ON (page_path) page_path, title
+      `SELECT DISTINCT ON (page_path) page_path, title, pub_date
          FROM article_titles
         WHERE page_path = ANY($1::text[])
         ORDER BY page_path, captured_at DESC`,
       [matchedPaths]
     );
-    for (const r of rows) {
-      if (r.title) ourTitles.set(r.page_path, r.title);
+    const titleByPath = new Map<string, { title: string; pubDate: string | null }>();
+    for (const r of titleRows) {
+      if (!r.title) continue;
+      titleByPath.set(r.page_path, {
+        title: r.title,
+        pubDate:
+          r.pub_date instanceof Date
+            ? r.pub_date.toISOString()
+            : r.pub_date
+            ? String(r.pub_date)
+            : null,
+      });
+    }
+
+    // Earliest pub_date from any title row (in case a later edit lacked one).
+    const { rows: earliestPub } = await getDb().query<{
+      page_path: string;
+      earliest_pub: string | Date | null;
+    }>(
+      `SELECT page_path, MIN(pub_date) AS earliest_pub
+         FROM article_titles
+        WHERE page_path = ANY($1::text[]) AND pub_date IS NOT NULL
+        GROUP BY page_path`,
+      [matchedPaths]
+    );
+    const earliestByPath = new Map<string, string | null>();
+    for (const r of earliestPub) {
+      earliestByPath.set(
+        r.page_path,
+        r.earliest_pub instanceof Date
+          ? r.earliest_pub.toISOString()
+          : r.earliest_pub
+          ? String(r.earliest_pub)
+          : null
+      );
+    }
+
+    // first_seen_at per article (our first Plausible detection).
+    const { rows: firstSeenRows } = await getDb().query<{
+      page_path: string;
+      first_seen_at: string | Date;
+    }>(
+      `SELECT page_path, first_seen_at
+         FROM article_monitors
+        WHERE page_path = ANY($1::text[])`,
+      [matchedPaths]
+    );
+    const firstSeenByPath = new Map<string, string>();
+    for (const r of firstSeenRows) {
+      firstSeenByPath.set(
+        r.page_path,
+        r.first_seen_at instanceof Date
+          ? r.first_seen_at.toISOString()
+          : String(r.first_seen_at)
+      );
+    }
+
+    for (const path of matchedPaths) {
+      const t = titleByPath.get(path);
+      if (!t) continue;
+      ourArticles.set(path, {
+        title: t.title,
+        pubDate: earliestByPath.get(path) ?? t.pubDate ?? null,
+        firstSeenAt: firstSeenByPath.get(path) ?? null,
+      });
     }
   }
-  return { externals, analysisByExternalId, ourTitles };
+  return { externals, analysisByExternalId, ourArticles };
 }

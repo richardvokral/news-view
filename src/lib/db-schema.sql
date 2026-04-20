@@ -143,11 +143,15 @@ CREATE TABLE IF NOT EXISTS article_titles (
   site_id TEXT NOT NULL,
   captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   title TEXT NOT NULL,
-  image_url TEXT
+  image_url TEXT,
+  pub_date TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS article_titles_page_idx
   ON article_titles(page_path, captured_at DESC);
+
+ALTER TABLE article_titles
+  ADD COLUMN IF NOT EXISTS pub_date TIMESTAMPTZ;
 
 -- Monitor config (singleton). Edited via /admin/monitor.
 CREATE TABLE IF NOT EXISTS monitor_config (
