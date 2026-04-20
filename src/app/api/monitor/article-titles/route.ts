@@ -19,6 +19,11 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const history = await listTitleHistoryForArticle(path);
-  return NextResponse.json({ pagePath: path, history });
+  try {
+    const history = await listTitleHistoryForArticle(path);
+    return NextResponse.json({ pagePath: path, history });
+  } catch (e) {
+    console.error("article-titles handler failed:", e);
+    return NextResponse.json({ pagePath: path, history: [] });
+  }
 }

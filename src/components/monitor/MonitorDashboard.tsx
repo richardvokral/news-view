@@ -35,6 +35,7 @@ interface Article {
   title: string | null;
   imageUrl: string | null;
   titleUpdatedAt: string | null;
+  hasStoredSources: boolean;
 }
 
 interface Props {
@@ -171,6 +172,13 @@ export default function MonitorDashboard({
     [searchParams]
   );
   const sourceFilter = searchParams.get("source");
+  const hiddenSources = useMemo(() => {
+    const raw = searchParams.get("hide") ?? "";
+    return raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }, [searchParams]);
   const expandedPath = searchParams.get("expand");
 
   const [articles, setArticles] = useState<Article[] | null>(null);
@@ -258,6 +266,32 @@ export default function MonitorDashboard({
     },
     [updateParams]
   );
+
+  const writeHidden = useCallback(
+    (list: string[]) => {
+      updateParams(
+        (params) => {
+          const dedup = Array.from(
+            new Set(list.map((s) => s.trim()).filter(Boolean))
+          );
+          if (dedup.length === 0) params.delete("hide");
+          else params.set("hide", dedup.join(","));
+        },
+        { replace: true }
+      );
+    },
+    [updateParams]
+  );
+
+  const hideSource = useCallback(
+    (source: string) => writeHidden([...hiddenSources, source]),
+    [hiddenSources, writeHidden]
+  );
+  const unhideSource = useCallback(
+    (source: string) => writeHidden(hiddenSources.filter((s) => s !== source)),
+    [hiddenSources, writeHidden]
+  );
+  const clearHidden = useCallback(() => writeHidden([]), [writeHidden]);
 
   const setExpandedPath = useCallback(
     (pagePath: string | null) => {
@@ -512,6 +546,10 @@ export default function MonitorDashboard({
             hours={hours}
             activeSource={sourceFilter}
             onSelect={setSourceFilter}
+            hiddenSources={hiddenSources}
+            onHide={hideSource}
+            onUnhide={unhideSource}
+            onClearHidden={clearHidden}
           />
 
           {loading ? (
@@ -690,6 +728,20 @@ function ExternalIcon() {
   );
 }
 
+function FlameIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className="h-4 w-4"
+      aria-hidden="true"
+    >
+      <path d="M12 2c1 3 4 4.5 4 8a4 4 0 1 1-8 0c0-1.2.3-2.1.8-2.9C9 8.6 10 7 10 5c1 1 2 2 2 3 .7-1 1-3 0-6zm-1.5 14a2.5 2.5 0 0 0 5 0c0-1.1-.6-2-1.4-2.6 0 1-.4 1.6-1.1 2-.2-1-.9-1.8-2-2.4 0 1.5-.5 2-.5 3z" />
+    </svg>
+  );
+}
+
 interface ArticleRowProps {
   article: Article & { trendScore: number; firstHourGrowth: number | null };
   expanded: boolean;
@@ -745,6 +797,15 @@ function ArticleRow({
                 <span className="truncate font-medium" title={displayTitle}>
                   {displayTitle}
                 </span>
+                {a.hasStoredSources && (
+                  <span
+                    className="shrink-0 text-orange-500"
+                    title="Source history is being recorded for this article (stored per tick)"
+                    aria-label="Source sampled"
+                  >
+                    <FlameIcon />
+                  </span>
+                )}
                 {titleSource === "rss" && (
                   <span
                     className="shrink-0 rounded bg-blue-50 px-1 text-[10px] font-medium uppercase text-blue-600"

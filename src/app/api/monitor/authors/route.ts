@@ -26,26 +26,31 @@ export async function GET(request: NextRequest) {
   if (!site) {
     return NextResponse.json({ error: "Unknown site" }, { status: 400 });
   }
-  const cfg = await getMonitorConfig();
-  const hoursParam = sp.get("hours");
-  const hours = hoursParam
-    ? Math.min(Math.max(1, Number(hoursParam)), 168)
-    : cfg.windowHours;
   const pagePath = sp.get("path");
   if (pagePath && !pagePath.startsWith("/")) {
     return NextResponse.json({ error: "Invalid path" }, { status: 400 });
   }
 
-  const filters = pagePath
-    ? `event:goal==author;event:page==${pagePath}`
-    : `event:goal==author`;
-  const today = new Date().toISOString().slice(0, 10);
-  const key = `monitor:authors:${site}:${hours}:${pagePath ?? "all"}`;
-
   try {
-    const redis = getRedis();
-    const cached = await redis.get(key);
-    if (cached) return NextResponse.json(JSON.parse(cached));
+    const cfg = await getMonitorConfig();
+    const hoursParam = sp.get("hours");
+    const hours = hoursParam
+      ? Math.min(Math.max(1, Number(hoursParam)), 168)
+      : cfg.windowHours;
+
+    const filters = pagePath
+      ? `event:goal==author;event:page==${pagePath}`
+      : `event:goal==author`;
+    const today = new Date().toISOString().slice(0, 10);
+    const key = `monitor:authors:${site}:${hours}:${pagePath ?? "all"}`;
+
+    try {
+      const redis = getRedis();
+      const cached = await redis.get(key);
+      if (cached) return NextResponse.json(JSON.parse(cached));
+    } catch {
+      // cache lookup is best-effort
+    }
 
     const res = (await getBreakdown(site, {
       property: "event:props:name",
@@ -65,13 +70,20 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => b.visitors - a.visitors);
 
     const body = { site, pagePath, authors };
-    await redis.set(key, JSON.stringify(body), "EX", CACHE_TTL_SECONDS);
+    try {
+      const redis = getRedis();
+      await redis.set(key, JSON.stringify(body), "EX", CACHE_TTL_SECONDS);
+    } catch {
+      // cache write is best-effort
+    }
     return NextResponse.json(body);
   } catch (e) {
     console.error("authors fetch failed:", e);
-    return NextResponse.json(
-      { site, pagePath, authors: [], error: "fetch_failed" },
-      { status: 200 }
-    );
+    return NextResponse.json({
+      site,
+      pagePath,
+      authors: [],
+      error: "fetch_failed",
+    });
   }
 }

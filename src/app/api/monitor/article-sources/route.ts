@@ -69,73 +69,102 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const cfg = await getMonitorConfig();
-  const hoursParam = sp.get("hours");
-  const hours = hoursParam
-    ? Math.min(Math.max(1, Number(hoursParam)), 168)
-    : cfg.windowHours;
-  const excluded = cfg.excludedSources;
+  try {
+    const cfg = await getMonitorConfig();
+    const hoursParam = sp.get("hours");
+    const hours = hoursParam
+      ? Math.min(Math.max(1, Number(hoursParam)), 168)
+      : cfg.windowHours;
+    const excluded = cfg.excludedSources;
 
-  if (cfg.sourceSamplingEnabled) {
-    const raw = await listLatestSourcesForArticle(pagePath, hours, 30);
-    const sources = raw
-      .filter((s) => !isExcluded(s.source, excluded))
-      .slice(0, 10);
-    if (sources.length > 0) {
-      let timeseries: TimeseriesPoint[] | undefined;
-      let topSources: string[] | undefined;
-      if (cfg.sourceTimeseriesEnabled) {
-        topSources = sources.slice(0, 5).map((s) => s.source);
-        const rawTs = await listSourceTimeseriesForArticle(pagePath, hours);
-        const filtered = rawTs.filter(
-          (r) => !isExcluded(r.source, excluded)
-        );
-        timeseries = buildTimeseries(filtered, topSources);
+    if (cfg.sourceSamplingEnabled) {
+      try {
+        const raw = await listLatestSourcesForArticle(pagePath, hours, 30);
+        const sources = raw
+          .filter((s) => !isExcluded(s.source, excluded))
+          .slice(0, 10);
+        if (sources.length > 0) {
+          let timeseries: TimeseriesPoint[] | undefined;
+          let topSources: string[] | undefined;
+          if (cfg.sourceTimeseriesEnabled) {
+            topSources = sources.slice(0, 5).map((s) => s.source);
+            try {
+              const rawTs = await listSourceTimeseriesForArticle(
+                pagePath,
+                hours
+              );
+              const filtered = rawTs.filter(
+                (r) => !isExcluded(r.source, excluded)
+              );
+              timeseries = buildTimeseries(filtered, topSources);
+            } catch (tsErr) {
+              console.error(
+                "article source timeseries fetch failed:",
+                tsErr
+              );
+              timeseries = [];
+            }
+          }
+          return NextResponse.json({
+            pagePath,
+            source: "db",
+            sources,
+            topSources,
+            timeseries,
+          });
+        }
+      } catch (dbErr) {
+        console.error("article DB sources fetch failed:", dbErr);
+        // fall through to Plausible path
       }
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const excludedKey = excluded.join("|");
+    const key = `monitor:article-sources:${site}:${hours}:${pagePath}:excl:${excludedKey}`;
+    try {
+      const redis = getRedis();
+      const cached = await redis.get(key);
+      if (cached) {
+        return NextResponse.json(JSON.parse(cached));
+      }
+      const res = (await getBreakdown(site, {
+        property: "visit:source",
+        metrics: "visitors",
+        period: "day",
+        date: today,
+        filters: `event:page==${pagePath}`,
+        limit: 15,
+      })) as { results?: PlausibleSourceRow[] };
+      const sources = (res.results || [])
+        .map((r) => ({
+          source: String(r.source),
+          visitors: Number(r.visitors) || 0,
+        }))
+        .filter((s) => !isExcluded(s.source, excluded))
+        .sort((a, b) => b.visitors - a.visitors)
+        .slice(0, 10);
+      const body = { pagePath, source: "plausible", sources };
+      try {
+        await redis.set(key, JSON.stringify(body), "EX", CACHE_TTL_SECONDS);
+      } catch {
+        // cache write is best-effort
+      }
+      return NextResponse.json(body);
+    } catch (e) {
+      console.error("article Plausible sources fetch failed:", e);
       return NextResponse.json({
         pagePath,
-        source: "db",
-        sources,
-        topSources,
-        timeseries,
+        source: "error",
+        sources: [],
       });
     }
-    // fall through to on-demand if DB has nothing yet
-  }
-
-  const today = new Date().toISOString().slice(0, 10);
-  const excludedKey = excluded.join("|");
-  const key = `monitor:article-sources:${site}:${hours}:${pagePath}:excl:${excludedKey}`;
-  try {
-    const redis = getRedis();
-    const cached = await redis.get(key);
-    if (cached) {
-      return NextResponse.json(JSON.parse(cached));
-    }
-    const res = (await getBreakdown(site, {
-      property: "visit:source",
-      metrics: "visitors",
-      period: "day",
-      date: today,
-      filters: `event:page==${pagePath}`,
-      limit: 15,
-    })) as { results?: PlausibleSourceRow[] };
-    const sources = (res.results || [])
-      .map((r) => ({
-        source: String(r.source),
-        visitors: Number(r.visitors) || 0,
-      }))
-      .filter((s) => !isExcluded(s.source, excluded))
-      .sort((a, b) => b.visitors - a.visitors)
-      .slice(0, 10);
-    const body = { pagePath, source: "plausible", sources };
-    await redis.set(key, JSON.stringify(body), "EX", CACHE_TTL_SECONDS);
-    return NextResponse.json(body);
-  } catch (e) {
-    console.error("article sources fetch failed:", e);
-    return NextResponse.json(
-      { pagePath, source: "error", sources: [] },
-      { status: 200 }
-    );
+  } catch (fatal) {
+    console.error("article-sources handler fatal:", fatal);
+    return NextResponse.json({
+      pagePath,
+      source: "error",
+      sources: [],
+    });
   }
 }

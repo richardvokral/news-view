@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { isKnownSite, getBreakdown } from "@/lib/plausible";
 import { getMonitorConfig } from "@/lib/monitor/config";
+import { listPagePathsBySource } from "@/lib/monitor/queries";
 import { getRedis } from "@/lib/redis";
 
 export const runtime = "nodejs";
@@ -69,18 +70,40 @@ export async function GET(request: NextRequest) {
   if (source) {
     const key = `monitor:sources:${site}:${hours}:${source}`;
     const data = await cachedJSON(key, async () => {
-      const res = (await getBreakdown(site, {
-        property: "event:page",
-        metrics: "visitors",
-        period: "day",
-        date: today,
-        filters: `visit:source==${source}`,
-        limit: 200,
-      })) as { results?: PlausiblePageRow[] };
-      const pagePaths = (res.results || [])
-        .map((r) => String(r.page))
-        .filter(Boolean);
-      return { source, pagePaths };
+      const plausiblePaths: string[] = [];
+      try {
+        const res = (await getBreakdown(site, {
+          property: "event:page",
+          metrics: "visitors",
+          period: "day",
+          date: today,
+          filters: `visit:source==${source}`,
+          limit: 200,
+        })) as { results?: PlausiblePageRow[] };
+        for (const r of res.results || []) {
+          const p = String(r.page);
+          if (p) plausiblePaths.push(p);
+        }
+      } catch (e) {
+        console.error("sources plausible filter failed:", e);
+      }
+
+      let dbPaths: string[] = [];
+      try {
+        dbPaths = await listPagePathsBySource(site, source, hours);
+      } catch (e) {
+        console.error("sources DB filter failed:", e);
+      }
+
+      const pagePaths = Array.from(new Set([...plausiblePaths, ...dbPaths]));
+      return {
+        source,
+        pagePaths,
+        sources: {
+          plausible: plausiblePaths.length,
+          stored: dbPaths.length,
+        },
+      };
     });
     return NextResponse.json(data);
   }

@@ -25,6 +25,7 @@ export interface ArticleWithStats {
   title: string | null;
   imageUrl: string | null;
   titleUpdatedAt: string | null;
+  hasStoredSources: boolean;
 }
 
 export interface TitleHistoryRow {
@@ -180,9 +181,16 @@ export async function listArticlesWithRecentStats(
     title: string | null;
     image_url: string | null;
     title_updated_at: string | null;
+    has_stored_sources: boolean | null;
   }>(
     `SELECT m.page_path, m.site_id, m.first_seen_at, m.last_checked_at,
-            t.title, t.image_url, t.captured_at AS title_updated_at
+            t.title, t.image_url, t.captured_at AS title_updated_at,
+            EXISTS (
+              SELECT 1
+                FROM article_source_snapshots s
+               WHERE s.page_path = m.page_path
+               LIMIT 1
+            ) AS has_stored_sources
        FROM article_monitors m
        LEFT JOIN LATERAL (
          SELECT title, image_url, captured_at
@@ -242,8 +250,38 @@ export async function listArticlesWithRecentStats(
       title: a.title,
       imageUrl: a.image_url,
       titleUpdatedAt: a.title_updated_at,
+      hasStoredSources: a.has_stored_sources === true,
     };
   });
+}
+
+/**
+ * Page paths from article_source_snapshots that received visitors from the
+ * given source within the window. Used to widen the "filter by source"
+ * selector with articles we've already sampled locally (complements the
+ * live Plausible filter).
+ */
+export async function listPagePathsBySource(
+  siteId: string | null,
+  source: string,
+  windowHours: number
+): Promise<string[]> {
+  if (!hasDb()) return [];
+  const cutoff = new Date(Date.now() - windowHours * 3600 * 1000);
+  const params: unknown[] = [source, cutoff];
+  let where = "s.source = $1 AND s.captured_at >= $2 AND s.visitors > 0";
+  if (siteId) {
+    params.push(siteId);
+    where += ` AND m.site_id = $${params.length}`;
+  }
+  const { rows } = await getDb().query<{ page_path: string }>(
+    `SELECT DISTINCT s.page_path
+       FROM article_source_snapshots s
+       JOIN article_monitors m ON m.page_path = s.page_path
+      WHERE ${where}`,
+    params
+  );
+  return rows.map((r) => r.page_path);
 }
 
 /**
