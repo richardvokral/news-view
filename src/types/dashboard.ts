@@ -147,6 +147,11 @@ export interface MonitorConfig {
   authorShortNames: Record<string, string>;
   authorSamplingEnabled: boolean;
   topSourcesLimit: number;
+  externalRssEnabled: boolean;
+  externalRssUrls: string[];
+  coverageEnabled: boolean;
+  coverageWindowHours: number;
+  coverageModel: string;
   updatedBy: string | null;
   updatedAt: string | null;
 }
@@ -169,6 +174,11 @@ export const DEFAULT_MONITOR_CONFIG: MonitorConfig = {
   authorShortNames: {},
   authorSamplingEnabled: false,
   topSourcesLimit: 10,
+  externalRssEnabled: false,
+  externalRssUrls: [],
+  coverageEnabled: false,
+  coverageWindowHours: 24,
+  coverageModel: "claude-haiku-4-5-20251001",
   updatedBy: null,
   updatedAt: null,
 };

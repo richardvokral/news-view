@@ -74,6 +74,20 @@ export async function PUT(request: NextRequest) {
       clean.authorSamplingEnabled = body.authorSamplingEnabled;
     if (typeof body.topSourcesLimit === "number")
       clean.topSourcesLimit = body.topSourcesLimit;
+    if (typeof body.externalRssEnabled === "boolean")
+      clean.externalRssEnabled = body.externalRssEnabled;
+    if (Array.isArray(body.externalRssUrls)) {
+      clean.externalRssUrls = body.externalRssUrls
+        .filter((v): v is string => typeof v === "string")
+        .map((v) => v.trim())
+        .filter((v) => v.length > 0);
+    }
+    if (typeof body.coverageEnabled === "boolean")
+      clean.coverageEnabled = body.coverageEnabled;
+    if (typeof body.coverageWindowHours === "number")
+      clean.coverageWindowHours = body.coverageWindowHours;
+    if (typeof body.coverageModel === "string")
+      clean.coverageModel = body.coverageModel;
     await saveMonitorConfig(gate.email, clean);
     const updated = await getMonitorConfig();
     return NextResponse.json({ config: updated });

@@ -3,10 +3,10 @@ import { getSession } from "@/lib/auth";
 import { listSiteIds, defaultSiteId } from "@/lib/plausible";
 import { getMonitorConfig } from "@/lib/monitor/config";
 import { siteBaseUrl } from "@/lib/monitor/site-urls";
-import MonitorDashboard from "@/components/monitor/MonitorDashboard";
+import MonitorPageShell from "@/components/monitor/MonitorPageShell";
 
 interface PageProps {
-  searchParams: Promise<{ site?: string }>;
+  searchParams: Promise<{ site?: string; tab?: string }>;
 }
 
 export default async function MonitorPage({ searchParams }: PageProps) {
@@ -25,7 +25,7 @@ export default async function MonitorPage({ searchParams }: PageProps) {
   const cfg = await getMonitorConfig();
 
   return (
-    <MonitorDashboard
+    <MonitorPageShell
       sites={sites}
       currentSite={currentSite}
       siteBaseUrl={currentSite ? siteBaseUrl(currentSite) : ""}
@@ -36,6 +36,7 @@ export default async function MonitorPage({ searchParams }: PageProps) {
       authorShortNames={cfg.authorShortNames}
       enabled={cfg.enabled}
       isAdmin={session.isAdmin}
+      coverageAvailable={cfg.externalRssEnabled || cfg.coverageEnabled}
     />
   );
 }

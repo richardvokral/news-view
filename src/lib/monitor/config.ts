@@ -19,6 +19,11 @@ interface DbRow {
   author_short_names: Record<string, string> | null;
   author_sampling_enabled: boolean | null;
   top_sources_limit: number | null;
+  external_rss_enabled: boolean | null;
+  external_rss_urls: string[] | null;
+  coverage_enabled: boolean | null;
+  coverage_window_hours: number | null;
+  coverage_model: string | null;
   updated_by: string | null;
   updated_at: string | Date | null;
 }
@@ -69,6 +74,17 @@ function rowToConfig(r: DbRow): MonitorConfig {
       r.author_sampling_enabled ?? DEFAULT_MONITOR_CONFIG.authorSamplingEnabled,
     topSourcesLimit:
       r.top_sources_limit ?? DEFAULT_MONITOR_CONFIG.topSourcesLimit,
+    externalRssEnabled:
+      r.external_rss_enabled ?? DEFAULT_MONITOR_CONFIG.externalRssEnabled,
+    externalRssUrls: Array.isArray(r.external_rss_urls)
+      ? r.external_rss_urls.map((s) => String(s).trim()).filter(Boolean)
+      : [],
+    coverageEnabled:
+      r.coverage_enabled ?? DEFAULT_MONITOR_CONFIG.coverageEnabled,
+    coverageWindowHours:
+      r.coverage_window_hours ?? DEFAULT_MONITOR_CONFIG.coverageWindowHours,
+    coverageModel:
+      r.coverage_model ?? DEFAULT_MONITOR_CONFIG.coverageModel,
     updatedBy: r.updated_by,
     updatedAt: r.updated_at
       ? new Date(r.updated_at as string).toISOString()
@@ -85,6 +101,8 @@ export async function getMonitorConfig(): Promise<MonitorConfig> {
             source_timeseries_enabled, excluded_sources,
             rss_enabled, site_rss_urls, show_article_images, author_short_names,
             author_sampling_enabled, top_sources_limit,
+            external_rss_enabled, external_rss_urls,
+            coverage_enabled, coverage_window_hours, coverage_model,
             updated_by, updated_at
        FROM monitor_config WHERE id = 1`
   );
@@ -142,6 +160,22 @@ export async function saveMonitorConfig(
       3,
       Math.min(50, cfg.topSourcesLimit ?? current.topSourcesLimit)
     ),
+    externalRssEnabled: cfg.externalRssEnabled ?? current.externalRssEnabled,
+    externalRssUrls: Array.isArray(cfg.externalRssUrls)
+      ? Array.from(
+          new Set(
+            cfg.externalRssUrls.map((s) => String(s).trim()).filter(Boolean)
+          )
+        )
+      : current.externalRssUrls,
+    coverageEnabled: cfg.coverageEnabled ?? current.coverageEnabled,
+    coverageWindowHours: Math.max(
+      1,
+      Math.min(168, cfg.coverageWindowHours ?? current.coverageWindowHours)
+    ),
+    coverageModel:
+      (cfg.coverageModel ?? current.coverageModel)?.trim() ||
+      current.coverageModel,
   };
   await getDb().query(
     `INSERT INTO monitor_config (id, enabled, interval_seconds, window_hours,
@@ -153,9 +187,13 @@ export async function saveMonitorConfig(
                                  rss_enabled, site_rss_urls,
                                  show_article_images, author_short_names,
                                  author_sampling_enabled, top_sources_limit,
+                                 external_rss_enabled, external_rss_urls,
+                                 coverage_enabled, coverage_window_hours,
+                                 coverage_model,
                                  updated_by)
      VALUES (1, $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11::jsonb,
-             $12, $13::jsonb, $14, $15::jsonb, $16, $17, $18)
+             $12, $13::jsonb, $14, $15::jsonb, $16, $17,
+             $18, $19::jsonb, $20, $21, $22, $23)
      ON CONFLICT (id) DO UPDATE SET
        enabled = EXCLUDED.enabled,
        interval_seconds = EXCLUDED.interval_seconds,
@@ -174,6 +212,11 @@ export async function saveMonitorConfig(
        author_short_names = EXCLUDED.author_short_names,
        author_sampling_enabled = EXCLUDED.author_sampling_enabled,
        top_sources_limit = EXCLUDED.top_sources_limit,
+       external_rss_enabled = EXCLUDED.external_rss_enabled,
+       external_rss_urls = EXCLUDED.external_rss_urls,
+       coverage_enabled = EXCLUDED.coverage_enabled,
+       coverage_window_hours = EXCLUDED.coverage_window_hours,
+       coverage_model = EXCLUDED.coverage_model,
        updated_by = EXCLUDED.updated_by,
        updated_at = NOW()`,
     [
@@ -194,6 +237,11 @@ export async function saveMonitorConfig(
       JSON.stringify(next.authorShortNames),
       next.authorSamplingEnabled,
       next.topSourcesLimit,
+      next.externalRssEnabled,
+      JSON.stringify(next.externalRssUrls),
+      next.coverageEnabled,
+      next.coverageWindowHours,
+      next.coverageModel,
       email,
     ]
   );

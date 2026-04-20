@@ -461,6 +461,119 @@ export default function MonitorConfigForm({ initial, sites }: Props) {
         </div>
       </div>
 
+      <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-4">
+        <div className="flex items-start gap-3">
+          <button
+            type="button"
+            onClick={() => setField("externalRssEnabled", !config.externalRssEnabled)}
+            className={`relative h-6 w-11 flex-shrink-0 rounded-full transition-colors ${
+              config.externalRssEnabled ? "bg-blue-600" : "bg-gray-300"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                config.externalRssEnabled ? "left-5" : "left-0.5"
+              }`}
+            />
+          </button>
+          <div>
+            <p className="text-sm font-medium text-gray-900">
+              External RSS sync (Coverage tab)
+            </p>
+            <p className="text-xs text-gray-500">
+              Pulls competitor RSS feeds into the database so the Coverage tab
+              can compare their headlines to ours. Runs via a separate QStash
+              job hitting{" "}
+              <code className="rounded bg-gray-100 px-1 text-[11px]">
+                /api/cron/coverage
+              </code>{" "}
+              with the same{" "}
+              <code className="rounded bg-gray-100 px-1 text-[11px]">
+                CRON_SECRET
+              </code>
+              . You can also trigger it manually from the Coverage tab.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-3">
+          <label className="mb-1 block text-xs font-medium uppercase text-gray-500">
+            External RSS feed URLs (one per line)
+          </label>
+          <textarea
+            value={config.externalRssUrls.join("\n")}
+            onChange={(e) =>
+              setField(
+                "externalRssUrls",
+                e.target.value
+                  .split("\n")
+                  .map((s) => s.trim())
+                  .filter((s) => s.length > 0)
+              )
+            }
+            placeholder={"https://www.novinky.cz/rss\nhttps://www.idnes.cz/rss"}
+            rows={3}
+            className="w-full rounded-md border border-gray-300 px-3 py-1.5 font-mono text-xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+        </div>
+
+        <div className="mt-4 flex items-start gap-3 border-t border-gray-200 pt-3">
+          <button
+            type="button"
+            onClick={() => setField("coverageEnabled", !config.coverageEnabled)}
+            className={`relative h-6 w-11 flex-shrink-0 rounded-full transition-colors ${
+              config.coverageEnabled ? "bg-blue-600" : "bg-gray-300"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                config.coverageEnabled ? "left-5" : "left-0.5"
+              }`}
+            />
+          </button>
+          <div>
+            <p className="text-sm font-medium text-gray-900">
+              AI coverage analysis
+            </p>
+            <p className="text-xs text-gray-500">
+              After each external-RSS fetch, ask the configured Anthropic model
+              (uses your{" "}
+              <code className="rounded bg-gray-100 px-1 text-[11px]">
+                ANTHROPIC_API_KEY
+              </code>
+              ) to decide whether each new external article is covered by our
+              recent titles, and score its importance 1-5. Only unanalysed
+              articles in the window are sent, so cost grows with new items.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <NumberField
+            label="Coverage window (hours)"
+            hint="How far back to compare external articles and our recent titles."
+            value={config.coverageWindowHours}
+            onChange={(v) => setField("coverageWindowHours", v)}
+            min={1}
+          />
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium uppercase text-gray-500">
+              Coverage model
+            </span>
+            <input
+              type="text"
+              value={config.coverageModel}
+              onChange={(e) => setField("coverageModel", e.target.value)}
+              placeholder="claude-haiku-4-5-20251001"
+              className="w-full rounded-md border border-gray-300 px-3 py-1.5 font-mono text-xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+            <span className="mt-1 block text-xs text-gray-500">
+              Anthropic model id used for the coverage analysis.
+            </span>
+          </label>
+        </div>
+      </div>
+
       {config.updatedAt && (
         <p className="text-xs text-gray-400">
           Last updated by {config.updatedBy || "unknown"} at{" "}

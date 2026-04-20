@@ -96,6 +96,44 @@ CREATE TABLE IF NOT EXISTS article_author_snapshots (
 CREATE INDEX IF NOT EXISTS article_author_snapshots_page_idx
   ON article_author_snapshots(page_path, captured_at DESC);
 
+-- Articles pulled from external (competitor) RSS feeds for the coverage
+-- comparison view. One row per unique (feed_source, guid).
+CREATE TABLE IF NOT EXISTS external_articles (
+  id BIGSERIAL PRIMARY KEY,
+  feed_source TEXT NOT NULL,
+  guid TEXT NOT NULL,
+  title TEXT NOT NULL,
+  link TEXT NOT NULL,
+  description TEXT,
+  pub_date TIMESTAMPTZ,
+  imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (feed_source, guid)
+);
+
+CREATE INDEX IF NOT EXISTS external_articles_imported_idx
+  ON external_articles(imported_at DESC);
+CREATE INDEX IF NOT EXISTS external_articles_pub_date_idx
+  ON external_articles(pub_date DESC);
+
+-- Coverage analysis results (AI cross-reference between external articles
+-- and our recent titles). Keyed by (our_site_id, external_article_id) so
+-- the same external article can be compared against multiple of our sites.
+CREATE TABLE IF NOT EXISTS coverage_analysis (
+  id BIGSERIAL PRIMARY KEY,
+  our_site_id TEXT NOT NULL,
+  external_article_id BIGINT NOT NULL REFERENCES external_articles(id) ON DELETE CASCADE,
+  covered BOOLEAN NOT NULL,
+  importance INTEGER NOT NULL DEFAULT 3,
+  matched_our_paths TEXT[] NOT NULL DEFAULT '{}',
+  rationale TEXT,
+  model TEXT,
+  analyzed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (our_site_id, external_article_id)
+);
+
+CREATE INDEX IF NOT EXISTS coverage_analysis_site_idx
+  ON coverage_analysis(our_site_id, analyzed_at DESC);
+
 -- Article title history (populated when rss_enabled and the site has an RSS
 -- URL configured). Append-only: a new row is inserted only when the title
 -- observed on the RSS feed differs from the previous latest row.
@@ -131,6 +169,11 @@ CREATE TABLE IF NOT EXISTS monitor_config (
   author_short_names JSONB NOT NULL DEFAULT '{}'::jsonb,
   author_sampling_enabled BOOLEAN NOT NULL DEFAULT false,
   top_sources_limit INTEGER NOT NULL DEFAULT 10,
+  external_rss_enabled BOOLEAN NOT NULL DEFAULT false,
+  external_rss_urls JSONB NOT NULL DEFAULT '[]'::jsonb,
+  coverage_enabled BOOLEAN NOT NULL DEFAULT false,
+  coverage_window_hours INTEGER NOT NULL DEFAULT 24,
+  coverage_model TEXT NOT NULL DEFAULT 'claude-haiku-4-5-20251001',
   updated_by TEXT,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -147,4 +190,9 @@ ALTER TABLE monitor_config
   ADD COLUMN IF NOT EXISTS show_article_images BOOLEAN NOT NULL DEFAULT false,
   ADD COLUMN IF NOT EXISTS author_short_names JSONB NOT NULL DEFAULT '{}'::jsonb,
   ADD COLUMN IF NOT EXISTS author_sampling_enabled BOOLEAN NOT NULL DEFAULT false,
-  ADD COLUMN IF NOT EXISTS top_sources_limit INTEGER NOT NULL DEFAULT 10;
+  ADD COLUMN IF NOT EXISTS top_sources_limit INTEGER NOT NULL DEFAULT 10,
+  ADD COLUMN IF NOT EXISTS external_rss_enabled BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS external_rss_urls JSONB NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS coverage_enabled BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS coverage_window_hours INTEGER NOT NULL DEFAULT 24,
+  ADD COLUMN IF NOT EXISTS coverage_model TEXT NOT NULL DEFAULT 'claude-haiku-4-5-20251001';
