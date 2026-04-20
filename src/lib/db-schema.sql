@@ -82,6 +82,21 @@ CREATE TABLE IF NOT EXISTS article_source_snapshots (
 CREATE INDEX IF NOT EXISTS article_source_snapshots_page_idx
   ON article_source_snapshots(page_path, captured_at DESC);
 
+-- Article title history (populated when rss_enabled and the site has an RSS
+-- URL configured). Append-only: a new row is inserted only when the title
+-- observed on the RSS feed differs from the previous latest row.
+CREATE TABLE IF NOT EXISTS article_titles (
+  id BIGSERIAL PRIMARY KEY,
+  page_path TEXT NOT NULL REFERENCES article_monitors(page_path) ON DELETE CASCADE,
+  site_id TEXT NOT NULL,
+  captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  title TEXT NOT NULL,
+  image_url TEXT
+);
+
+CREATE INDEX IF NOT EXISTS article_titles_page_idx
+  ON article_titles(page_path, captured_at DESC);
+
 -- Monitor config (singleton). Edited via /admin/monitor.
 CREATE TABLE IF NOT EXISTS monitor_config (
   id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
@@ -96,6 +111,10 @@ CREATE TABLE IF NOT EXISTS monitor_config (
   trend_window_minutes INTEGER NOT NULL DEFAULT 60,
   source_timeseries_enabled BOOLEAN NOT NULL DEFAULT false,
   excluded_sources JSONB NOT NULL DEFAULT '[]'::jsonb,
+  rss_enabled BOOLEAN NOT NULL DEFAULT false,
+  site_rss_urls JSONB NOT NULL DEFAULT '{}'::jsonb,
+  show_article_images BOOLEAN NOT NULL DEFAULT false,
+  author_short_names JSONB NOT NULL DEFAULT '{}'::jsonb,
   updated_by TEXT,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -106,4 +125,8 @@ ALTER TABLE monitor_config
   ADD COLUMN IF NOT EXISTS source_sampling_top_n INTEGER NOT NULL DEFAULT 10,
   ADD COLUMN IF NOT EXISTS trend_window_minutes INTEGER NOT NULL DEFAULT 60,
   ADD COLUMN IF NOT EXISTS source_timeseries_enabled BOOLEAN NOT NULL DEFAULT false,
-  ADD COLUMN IF NOT EXISTS excluded_sources JSONB NOT NULL DEFAULT '[]'::jsonb;
+  ADD COLUMN IF NOT EXISTS excluded_sources JSONB NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS rss_enabled BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS site_rss_urls JSONB NOT NULL DEFAULT '{}'::jsonb,
+  ADD COLUMN IF NOT EXISTS show_article_images BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS author_short_names JSONB NOT NULL DEFAULT '{}'::jsonb;

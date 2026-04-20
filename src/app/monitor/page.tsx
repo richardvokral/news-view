@@ -32,6 +32,8 @@ export default async function MonitorPage({ searchParams }: PageProps) {
       defaultHours={cfg.windowHours}
       trendWindowMinutes={cfg.trendWindowMinutes}
       sourceTimeseriesEnabled={cfg.sourceTimeseriesEnabled}
+      showArticleImages={cfg.showArticleImages}
+      authorShortNames={cfg.authorShortNames}
       enabled={cfg.enabled}
       isAdmin={session.isAdmin}
     />

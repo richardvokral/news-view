@@ -32,6 +32,9 @@ interface Article {
   currentVisitors: number;
   currentPageviews: number;
   snapshots: Snapshot[];
+  title: string | null;
+  imageUrl: string | null;
+  titleUpdatedAt: string | null;
 }
 
 interface Props {
@@ -41,6 +44,8 @@ interface Props {
   defaultHours: number;
   trendWindowMinutes: number;
   sourceTimeseriesEnabled: boolean;
+  showArticleImages: boolean;
+  authorShortNames: Record<string, string>;
   enabled: boolean;
   isAdmin: boolean;
 }
@@ -149,6 +154,8 @@ export default function MonitorDashboard({
   defaultHours,
   trendWindowMinutes,
   sourceTimeseriesEnabled,
+  showArticleImages,
+  authorShortNames,
   enabled,
   isAdmin,
 }: Props) {
@@ -332,7 +339,9 @@ export default function MonitorDashboard({
         : null;
     return withTrend.filter((a) => {
       if (needle) {
-        const hay = `${a.pagePath} ${parseArticleName(a.pagePath)}`.toLowerCase();
+        const hay = `${a.pagePath} ${a.title ?? ""} ${parseArticleName(
+          a.pagePath
+        )}`.toLowerCase();
         if (!hay.includes(needle)) return false;
       }
       if (!applyNumericFilter(a.currentVisitors, filters.visitors)) return false;
@@ -361,8 +370,8 @@ export default function MonitorDashboard({
       let cmp = 0;
       switch (sortKey) {
         case "article":
-          cmp = parseArticleName(a.pagePath).localeCompare(
-            parseArticleName(b.pagePath)
+          cmp = (a.title ?? parseArticleName(a.pagePath)).localeCompare(
+            b.title ?? parseArticleName(b.pagePath)
           );
           break;
         case "visitors":
@@ -491,7 +500,9 @@ export default function MonitorDashboard({
                 totals.top ? totals.top.currentVisitors.toLocaleString() : "—"
               }
               secondary={
-                totals.top ? parseArticleName(totals.top.pagePath) : ""
+                totals.top
+                  ? totals.top.title ?? parseArticleName(totals.top.pagePath)
+                  : ""
               }
             />
           </div>
@@ -608,6 +619,8 @@ export default function MonitorDashboard({
                           hours={hours}
                           zebra={i % 2 === 0}
                           sourceTimeseriesEnabled={sourceTimeseriesEnabled}
+                          showArticleImages={showArticleImages}
+                          authorShortNames={authorShortNames}
                         />
                       );
                     })
@@ -686,6 +699,8 @@ interface ArticleRowProps {
   hours: number;
   zebra: boolean;
   sourceTimeseriesEnabled: boolean;
+  showArticleImages: boolean;
+  authorShortNames: Record<string, string>;
 }
 
 function ArticleRow({
@@ -697,7 +712,11 @@ function ArticleRow({
   hours,
   zebra,
   sourceTimeseriesEnabled,
+  showArticleImages,
+  authorShortNames,
 }: ArticleRowProps) {
+  const displayTitle = a.title ?? parseArticleName(a.pagePath);
+  const titleSource: "rss" | "path" = a.title ? "rss" : "path";
   return (
     <>
       <tr
@@ -710,23 +729,45 @@ function ArticleRow({
           className="max-w-0 truncate px-5 py-3 text-gray-800"
           title={a.pagePath}
         >
-          <div className="flex items-center gap-2">
-            <span className="truncate font-medium">
-              {parseArticleName(a.pagePath)}
-            </span>
-            <a
-              href={liveUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              title={liveUrl}
-              className="shrink-0 text-gray-400 hover:text-blue-600"
-              aria-label="Open live article"
-            >
-              <ExternalIcon />
-            </a>
+          <div className="flex items-start gap-3">
+            {showArticleImages && a.imageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={a.imageUrl}
+                alt=""
+                className="h-10 w-14 shrink-0 rounded object-cover"
+                loading="lazy"
+                referrerPolicy="no-referrer"
+              />
+            ) : null}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="truncate font-medium" title={displayTitle}>
+                  {displayTitle}
+                </span>
+                {titleSource === "rss" && (
+                  <span
+                    className="shrink-0 rounded bg-blue-50 px-1 text-[10px] font-medium uppercase text-blue-600"
+                    title="Title sourced from RSS"
+                  >
+                    RSS
+                  </span>
+                )}
+                <a
+                  href={liveUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  title={liveUrl}
+                  className="shrink-0 text-gray-400 hover:text-blue-600"
+                  aria-label="Open live article"
+                >
+                  <ExternalIcon />
+                </a>
+              </div>
+              <div className="truncate text-xs text-gray-400">{a.pagePath}</div>
+            </div>
           </div>
-          <div className="truncate text-xs text-gray-400">{a.pagePath}</div>
         </td>
         <td className="px-2 py-3 text-right text-base font-semibold tabular-nums text-gray-900">
           {a.currentVisitors.toLocaleString()}
@@ -787,6 +828,10 @@ function ArticleRow({
               trendLabel={trendLabel}
               firstHourGrowth={a.firstHourGrowth}
               sourceTimeseriesEnabled={sourceTimeseriesEnabled}
+              authorShortNames={authorShortNames}
+              currentTitle={a.title}
+              imageUrl={a.imageUrl}
+              showArticleImages={showArticleImages}
             />
           </td>
         </tr>

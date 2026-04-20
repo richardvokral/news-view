@@ -22,6 +22,15 @@ export interface ArticleWithStats {
   currentVisitors: number;
   currentPageviews: number;
   snapshots: SnapshotRow[];
+  title: string | null;
+  imageUrl: string | null;
+  titleUpdatedAt: string | null;
+}
+
+export interface TitleHistoryRow {
+  capturedAt: string;
+  title: string;
+  imageUrl: string | null;
 }
 
 export interface SourceVisitorRow {
@@ -79,6 +88,72 @@ export async function insertArticleSourceSnapshot(
   );
 }
 
+/**
+ * Record an observed title for an article. The caller is responsible for
+ * only calling this when the title has actually changed (or there is no
+ * prior title row) to keep the table append-only and meaningful.
+ */
+export async function insertArticleTitle(
+  pagePath: string,
+  siteId: string,
+  capturedAt: Date,
+  title: string,
+  imageUrl: string | null
+): Promise<void> {
+  if (!hasDb()) return;
+  await getDb().query(
+    `INSERT INTO article_titles (page_path, site_id, captured_at, title, image_url)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [pagePath, siteId, capturedAt, title, imageUrl]
+  );
+}
+
+export async function getLatestTitle(
+  pagePath: string
+): Promise<{ title: string; imageUrl: string | null; capturedAt: string } | null> {
+  if (!hasDb()) return null;
+  const { rows } = await getDb().query<{
+    title: string;
+    image_url: string | null;
+    captured_at: string;
+  }>(
+    `SELECT title, image_url, captured_at
+       FROM article_titles
+      WHERE page_path = $1
+      ORDER BY captured_at DESC
+      LIMIT 1`,
+    [pagePath]
+  );
+  if (rows.length === 0) return null;
+  return {
+    title: rows[0].title,
+    imageUrl: rows[0].image_url,
+    capturedAt: rows[0].captured_at,
+  };
+}
+
+export async function listTitleHistoryForArticle(
+  pagePath: string
+): Promise<TitleHistoryRow[]> {
+  if (!hasDb()) return [];
+  const { rows } = await getDb().query<{
+    captured_at: string;
+    title: string;
+    image_url: string | null;
+  }>(
+    `SELECT captured_at, title, image_url
+       FROM article_titles
+      WHERE page_path = $1
+      ORDER BY captured_at ASC`,
+    [pagePath]
+  );
+  return rows.map((r) => ({
+    capturedAt: r.captured_at,
+    title: r.title,
+    imageUrl: r.image_url,
+  }));
+}
+
 export async function listArticlesWithRecentStats(
   siteId: string | null,
   windowHours: number,
@@ -88,25 +163,36 @@ export async function listArticlesWithRecentStats(
   if (!hasDb()) return [];
   const cutoff = new Date(Date.now() - windowHours * 3600 * 1000);
   const params: unknown[] = [cutoff];
-  let where = "first_seen_at >= $1";
+  let where = "m.first_seen_at >= $1";
   if (siteId) {
     params.push(siteId);
-    where += ` AND site_id = $${params.length}`;
+    where += ` AND m.site_id = $${params.length}`;
   }
   if (pagePaths && pagePaths.length > 0) {
     params.push(pagePaths);
-    where += ` AND page_path = ANY($${params.length}::text[])`;
+    where += ` AND m.page_path = ANY($${params.length}::text[])`;
   }
   const { rows: articles } = await getDb().query<{
     page_path: string;
     site_id: string;
     first_seen_at: string;
     last_checked_at: string | null;
+    title: string | null;
+    image_url: string | null;
+    title_updated_at: string | null;
   }>(
-    `SELECT page_path, site_id, first_seen_at, last_checked_at
-       FROM article_monitors
+    `SELECT m.page_path, m.site_id, m.first_seen_at, m.last_checked_at,
+            t.title, t.image_url, t.captured_at AS title_updated_at
+       FROM article_monitors m
+       LEFT JOIN LATERAL (
+         SELECT title, image_url, captured_at
+           FROM article_titles
+          WHERE page_path = m.page_path
+          ORDER BY captured_at DESC
+          LIMIT 1
+       ) t ON true
       WHERE ${where}
-      ORDER BY first_seen_at DESC
+      ORDER BY m.first_seen_at DESC
       LIMIT 200`,
     params
   );
@@ -153,6 +239,9 @@ export async function listArticlesWithRecentStats(
       currentVisitors: latest?.visitors ?? 0,
       currentPageviews: latest?.pageviews ?? 0,
       snapshots,
+      title: a.title,
+      imageUrl: a.image_url,
+      titleUpdatedAt: a.title_updated_at,
     };
   });
 }

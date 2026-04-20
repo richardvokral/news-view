@@ -141,6 +141,10 @@ export interface MonitorConfig {
   trendWindowMinutes: number;
   sourceTimeseriesEnabled: boolean;
   excludedSources: string[];
+  rssEnabled: boolean;
+  siteRssUrls: Record<string, string>;
+  showArticleImages: boolean;
+  authorShortNames: Record<string, string>;
   updatedBy: string | null;
   updatedAt: string | null;
 }
@@ -157,6 +161,10 @@ export const DEFAULT_MONITOR_CONFIG: MonitorConfig = {
   trendWindowMinutes: 60,
   sourceTimeseriesEnabled: false,
   excludedSources: [],
+  rssEnabled: false,
+  siteRssUrls: {},
+  showArticleImages: false,
+  authorShortNames: {},
   updatedBy: null,
   updatedAt: null,
 };

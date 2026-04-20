@@ -1,10 +1,13 @@
 import { getRedis } from "@/lib/redis";
 import { listSiteIds, getBreakdown } from "@/lib/plausible";
 import { getMonitorConfig } from "./config";
+import { fetchRssFeed, type RssItem } from "./rss";
 import {
   upsertArticle,
   insertSnapshot,
   insertArticleSourceSnapshot,
+  insertArticleTitle,
+  getLatestTitle,
   pruneSnapshots,
   pruneArticleSourceSnapshots,
   pruneMonitors,
@@ -13,7 +16,12 @@ import {
 interface TickResult {
   ok: true;
   skippedReason?: string;
-  sites: { siteId: string; articles: number; sources: number }[];
+  sites: {
+    siteId: string;
+    articles: number;
+    sources: number;
+    titles?: number;
+  }[];
   pruned: { snapshots: number; monitors: number; sources: number };
   requestsThisHour: number;
 }
@@ -61,7 +69,30 @@ export async function runMonitorTick(): Promise<TickResult> {
 
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
-  const perSite: { siteId: string; articles: number; sources: number }[] = [];
+  const perSite: {
+    siteId: string;
+    articles: number;
+    sources: number;
+    titles?: number;
+  }[] = [];
+
+  // Fetch RSS feeds up front (in parallel). Reuses one HTTP call per site per
+  // tick; doesn't consume the Plausible hourly budget.
+  const rssBySite = new Map<string, Map<string, RssItem>>();
+  if (cfg.rssEnabled) {
+    await Promise.all(
+      sites.map(async (siteId) => {
+        const url = cfg.siteRssUrls[siteId];
+        if (!url) return;
+        const feed = await fetchRssFeed(url);
+        const byPath = new Map<string, RssItem>();
+        for (const item of feed.items) {
+          if (!byPath.has(item.pagePath)) byPath.set(item.pagePath, item);
+        }
+        rssBySite.set(siteId, byPath);
+      })
+    );
+  }
 
   // Reserve rate budget for the source-sampling pass, if enabled. If it won't
   // fit, we run the article pass alone and log a note.
@@ -98,6 +129,8 @@ export async function runMonitorTick(): Promise<TickResult> {
       const rows = (raw.results || []).filter((r) =>
         regex.test(String(r.page))
       );
+      let titlesWritten = 0;
+      const rssByPath = rssBySite.get(siteId);
       for (const row of rows) {
         await upsertArticle(row.page, siteId, now);
         await insertSnapshot(
@@ -107,6 +140,26 @@ export async function runMonitorTick(): Promise<TickResult> {
           Number(row.visitors) || 0,
           Number(row.pageviews) || 0
         );
+
+        if (rssByPath) {
+          const rssItem = rssByPath.get(row.page);
+          if (rssItem) {
+            const latest = await getLatestTitle(row.page);
+            const titleChanged = !latest || latest.title !== rssItem.title;
+            const imageChanged =
+              !latest || (latest.imageUrl ?? null) !== (rssItem.imageUrl ?? null);
+            if (titleChanged || imageChanged) {
+              await insertArticleTitle(
+                row.page,
+                siteId,
+                now,
+                rssItem.title,
+                rssItem.imageUrl
+              );
+              titlesWritten += 1;
+            }
+          }
+        }
       }
 
       if (canSampleSources && rows.length > 0) {
@@ -147,11 +200,16 @@ export async function runMonitorTick(): Promise<TickResult> {
         }
       }
 
-      perSite.push({ siteId, articles: rows.length, sources: sampledSources });
+      perSite.push({
+        siteId,
+        articles: rows.length,
+        sources: sampledSources,
+        titles: titlesWritten,
+      });
     } catch (e) {
       console.error(`monitor tick failed for ${siteId}:`, e);
       callsMade += 1;
-      perSite.push({ siteId, articles: 0, sources: 0 });
+      perSite.push({ siteId, articles: 0, sources: 0, titles: 0 });
     }
   }
   if (callsMade > 0) {

@@ -13,8 +13,29 @@ interface DbRow {
   trend_window_minutes: number | null;
   source_timeseries_enabled: boolean | null;
   excluded_sources: string[] | null;
+  rss_enabled: boolean | null;
+  site_rss_urls: Record<string, string> | null;
+  show_article_images: boolean | null;
+  author_short_names: Record<string, string> | null;
   updated_by: string | null;
   updated_at: string | Date | null;
+}
+
+function normalizeStringMap(
+  value: Record<string, unknown> | null | undefined
+): Record<string, string> {
+  if (!value || typeof value !== "object") return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (typeof k !== "string") continue;
+    const key = k.trim();
+    if (!key) continue;
+    if (typeof v !== "string") continue;
+    const val = v.trim();
+    if (!val) continue;
+    out[key] = val;
+  }
+  return out;
 }
 
 function rowToConfig(r: DbRow): MonitorConfig {
@@ -37,6 +58,11 @@ function rowToConfig(r: DbRow): MonitorConfig {
     excludedSources: Array.isArray(r.excluded_sources)
       ? r.excluded_sources.map(String)
       : [],
+    rssEnabled: r.rss_enabled ?? DEFAULT_MONITOR_CONFIG.rssEnabled,
+    siteRssUrls: normalizeStringMap(r.site_rss_urls),
+    showArticleImages:
+      r.show_article_images ?? DEFAULT_MONITOR_CONFIG.showArticleImages,
+    authorShortNames: normalizeStringMap(r.author_short_names),
     updatedBy: r.updated_by,
     updatedAt: r.updated_at
       ? new Date(r.updated_at as string).toISOString()
@@ -51,6 +77,7 @@ export async function getMonitorConfig(): Promise<MonitorConfig> {
             max_requests_per_hour, site_patterns,
             source_sampling_enabled, source_sampling_top_n, trend_window_minutes,
             source_timeseries_enabled, excluded_sources,
+            rss_enabled, site_rss_urls, show_article_images, author_short_names,
             updated_by, updated_at
        FROM monitor_config WHERE id = 1`
   );
@@ -94,6 +121,14 @@ export async function saveMonitorConfig(
           )
         )
       : current.excludedSources,
+    rssEnabled: cfg.rssEnabled ?? current.rssEnabled,
+    siteRssUrls: cfg.siteRssUrls
+      ? normalizeStringMap(cfg.siteRssUrls)
+      : current.siteRssUrls,
+    showArticleImages: cfg.showArticleImages ?? current.showArticleImages,
+    authorShortNames: cfg.authorShortNames
+      ? normalizeStringMap(cfg.authorShortNames)
+      : current.authorShortNames,
   };
   await getDb().query(
     `INSERT INTO monitor_config (id, enabled, interval_seconds, window_hours,
@@ -102,8 +137,11 @@ export async function saveMonitorConfig(
                                  source_sampling_enabled, source_sampling_top_n,
                                  trend_window_minutes,
                                  source_timeseries_enabled, excluded_sources,
+                                 rss_enabled, site_rss_urls,
+                                 show_article_images, author_short_names,
                                  updated_by)
-     VALUES (1, $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11::jsonb, $12)
+     VALUES (1, $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11::jsonb,
+             $12, $13::jsonb, $14, $15::jsonb, $16)
      ON CONFLICT (id) DO UPDATE SET
        enabled = EXCLUDED.enabled,
        interval_seconds = EXCLUDED.interval_seconds,
@@ -116,6 +154,10 @@ export async function saveMonitorConfig(
        trend_window_minutes = EXCLUDED.trend_window_minutes,
        source_timeseries_enabled = EXCLUDED.source_timeseries_enabled,
        excluded_sources = EXCLUDED.excluded_sources,
+       rss_enabled = EXCLUDED.rss_enabled,
+       site_rss_urls = EXCLUDED.site_rss_urls,
+       show_article_images = EXCLUDED.show_article_images,
+       author_short_names = EXCLUDED.author_short_names,
        updated_by = EXCLUDED.updated_by,
        updated_at = NOW()`,
     [
@@ -130,6 +172,10 @@ export async function saveMonitorConfig(
       next.trendWindowMinutes,
       next.sourceTimeseriesEnabled,
       JSON.stringify(next.excludedSources),
+      next.rssEnabled,
+      JSON.stringify(next.siteRssUrls),
+      next.showArticleImages,
+      JSON.stringify(next.authorShortNames),
       email,
     ]
   );

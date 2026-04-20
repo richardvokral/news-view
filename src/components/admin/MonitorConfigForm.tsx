@@ -11,7 +11,12 @@ interface Props {
 interface TickResult {
   ok: boolean;
   skippedReason?: string;
-  sites?: { siteId: string; articles: number; sources?: number }[];
+  sites?: {
+    siteId: string;
+    articles: number;
+    sources?: number;
+    titles?: number;
+  }[];
   pruned?: { snapshots: number; monitors: number; sources?: number };
   requestsThisHour?: number;
   error?: string;
@@ -39,6 +44,36 @@ export default function MonitorConfigForm({ initial, sites }: Props) {
       ...prev,
       sitePatterns: { ...prev.sitePatterns, [siteId]: pattern },
     }));
+  }
+
+  function setRssUrl(siteId: string, url: string) {
+    setConfig((prev) => {
+      const next = { ...prev.siteRssUrls };
+      const trimmed = url.trim();
+      if (trimmed) next[siteId] = trimmed;
+      else delete next[siteId];
+      return { ...prev, siteRssUrls: next };
+    });
+  }
+
+  function shortNamesToText(map: Record<string, string>): string {
+    return Object.entries(map)
+      .map(([k, v]) => `${k} = ${v}`)
+      .join("\n");
+  }
+
+  function shortNamesFromText(text: string): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const line of text.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const eq = trimmed.indexOf("=");
+      if (eq <= 0) continue;
+      const key = trimmed.slice(0, eq).trim();
+      const value = trimmed.slice(eq + 1).trim();
+      if (key && value) out[key] = value;
+    }
+    return out;
   }
 
   async function save(e: React.FormEvent) {
@@ -282,6 +317,105 @@ export default function MonitorConfigForm({ initial, sites }: Props) {
         )}
       </div>
 
+      <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-4">
+        <div className="flex items-start gap-3">
+          <button
+            type="button"
+            onClick={() => setField("rssEnabled", !config.rssEnabled)}
+            className={`relative h-6 w-11 flex-shrink-0 rounded-full transition-colors ${
+              config.rssEnabled ? "bg-blue-600" : "bg-gray-300"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                config.rssEnabled ? "left-5" : "left-0.5"
+              }`}
+            />
+          </button>
+          <div>
+            <p className="text-sm font-medium text-gray-900">RSS title + image sync</p>
+            <p className="text-xs text-gray-500">
+              Each cron tick fetches the RSS feed for each site and records the
+              article title (and first image enclosure). Title changes are
+              appended to the title history so you can see how titles evolve.
+              Articles not present in the feed fall back to the path-derived
+              name.
+            </p>
+          </div>
+        </div>
+
+        {sites.length > 0 && (
+          <div className="mt-4 space-y-2">
+            {sites.map((siteId) => (
+              <div key={siteId} className="flex items-center gap-3">
+                <code className="w-40 rounded bg-gray-50 px-2 py-1 text-xs text-gray-700">
+                  {siteId}
+                </code>
+                <input
+                  type="url"
+                  value={config.siteRssUrls[siteId] ?? ""}
+                  onChange={(e) => setRssUrl(siteId, e.target.value)}
+                  placeholder="https://example.com/rss"
+                  className="flex-1 rounded-md border border-gray-300 px-3 py-1.5 font-mono text-xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-4 flex items-start gap-3 border-t border-gray-200 pt-3">
+          <button
+            type="button"
+            onClick={() =>
+              setField("showArticleImages", !config.showArticleImages)
+            }
+            className={`relative h-6 w-11 flex-shrink-0 rounded-full transition-colors ${
+              config.showArticleImages ? "bg-blue-600" : "bg-gray-300"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                config.showArticleImages ? "left-5" : "left-0.5"
+              }`}
+            />
+          </button>
+          <div>
+            <p className="text-sm font-medium text-gray-900">
+              Show article images on /monitor
+            </p>
+            <p className="text-xs text-gray-500">
+              Displays the RSS image as a small thumbnail in the article row
+              and a capped preview in the detail panel. Only images already
+              stored via RSS sync are shown; the browser downloads them
+              directly from the publisher.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h3 className="mb-1 text-sm font-medium text-gray-900">
+          Author short names
+        </h3>
+        <p className="mb-2 text-xs text-gray-500">
+          Mapping from short form to full name, applied when rendering
+          authors in the article detail. One per line, format{" "}
+          <code className="rounded bg-gray-100 px-1 text-[11px]">
+            short = Full Name
+          </code>
+          .
+        </p>
+        <textarea
+          value={shortNamesToText(config.authorShortNames)}
+          onChange={(e) =>
+            setField("authorShortNames", shortNamesFromText(e.target.value))
+          }
+          placeholder={"jk = Jan Krampol\nmh = Martin Havel"}
+          rows={4}
+          className="w-full rounded-md border border-gray-300 px-3 py-1.5 font-mono text-xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        />
+      </div>
+
       {config.updatedAt && (
         <p className="text-xs text-gray-400">
           Last updated by {config.updatedBy || "unknown"} at{" "}
@@ -347,6 +481,8 @@ export default function MonitorConfigForm({ initial, sites }: Props) {
                     : {s.articles} article{s.articles === 1 ? "" : "s"}
                     {typeof s.sources === "number" &&
                       `, ${s.sources} source row${s.sources === 1 ? "" : "s"}`}
+                    {typeof s.titles === "number" && s.titles > 0 &&
+                      `, ${s.titles} title change${s.titles === 1 ? "" : "s"}`}
                   </li>
                 ))}
                 <li>

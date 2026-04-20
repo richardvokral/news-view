@@ -53,6 +53,23 @@ export async function PUT(request: NextRequest) {
       }
       clean.sitePatterns = sp;
     }
+    if (typeof body.rssEnabled === "boolean") clean.rssEnabled = body.rssEnabled;
+    if (body.siteRssUrls && typeof body.siteRssUrls === "object") {
+      const sr: Record<string, string> = {};
+      for (const [k, v] of Object.entries(body.siteRssUrls)) {
+        if (typeof k === "string" && typeof v === "string") sr[k] = v;
+      }
+      clean.siteRssUrls = sr;
+    }
+    if (typeof body.showArticleImages === "boolean")
+      clean.showArticleImages = body.showArticleImages;
+    if (body.authorShortNames && typeof body.authorShortNames === "object") {
+      const an: Record<string, string> = {};
+      for (const [k, v] of Object.entries(body.authorShortNames)) {
+        if (typeof k === "string" && typeof v === "string") an[k] = v;
+      }
+      clean.authorShortNames = an;
+    }
     await saveMonitorConfig(gate.email, clean);
     const updated = await getMonitorConfig();
     return NextResponse.json({ config: updated });
