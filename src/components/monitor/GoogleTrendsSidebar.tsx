@@ -164,6 +164,18 @@ export default function GoogleTrendsSidebar() {
                 <span title={current.fetchedAt}>
                   {new Date(current.fetchedAt).toLocaleTimeString()}
                 </span>
+                {current.source && (
+                  <span
+                    className="ml-1 text-gray-400"
+                    title={
+                      current.source === "google-direct"
+                        ? "Fetched directly from Google (free)"
+                        : "Fetched via scrape.do (paid proxy fallback)"
+                    }
+                  >
+                    · {current.source === "google-direct" ? "direct" : "proxy"}
+                  </span>
+                )}
               </>
             ) : (
               "No snapshot yet — click Refresh."

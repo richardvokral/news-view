@@ -1,11 +1,15 @@
-// Google Trends fetcher via scrape.do.
+// Google Trends fetcher.
 //
 // Google deprecated the legacy /trends/api/dailytrends JSON endpoint (it now
-// returns 404), so we use their current public RSS trending feed
-// (`https://trends.google.com/trending/rss?geo=XX`) and route it through
-// scrape.do to bypass the region/consent checks. We parse the Google-
-// specific `ht:` namespaced tags to extract approximate traffic and the
-// first related news item per trend.
+// returns 404). Their current public surface for daily trending searches is
+// the RSS feed at `https://trends.google.com/trending/rss?geo=XX`, which is
+// accessible without auth. We try a direct fetch first (free, fast) and only
+// fall back to scrape.do if that fails or returns a consent/blocked page —
+// this keeps the scrape.do quota for cases where the direct request gets
+// geo-blocked or served a consent wall.
+//
+// We parse the Google-specific `ht:` namespaced tags to extract approximate
+// traffic and the first related news item per trend.
 
 import { getDb, hasDb } from "@/lib/db";
 
@@ -89,62 +93,117 @@ export function parseTrendsRss(xml: string): TrendItem[] {
   return items;
 }
 
-export async function fetchGoogleTrends(
-  locale: string
-): Promise<TrendsSnapshot> {
-  const fetchedAt = new Date().toISOString();
-  const token = process.env.SCRAPE_DO_TOKEN;
-  if (!token) {
-    return {
-      locale,
-      fetchedAt,
-      source: "scrape.do",
-      data: [],
-      error: "SCRAPE_DO_TOKEN not set",
-    };
-  }
-  const target = buildTrendsUrl(locale);
-  const url = `${SCRAPE_DO_BASE}/?token=${encodeURIComponent(
-    token
-  )}&url=${encodeURIComponent(target)}`;
+interface AttemptResult {
+  ok: boolean;
+  data: TrendItem[];
+  error: string | null;
+  body?: string;
+}
+
+async function tryFetch(url: string): Promise<AttemptResult> {
   try {
     const res = await fetch(url, {
       cache: "no-store",
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (compatible; news-view-monitor/1.0; +https://example.com)",
+        Accept: "application/rss+xml,application/xml,text/xml;q=0.9,*/*;q=0.5",
+      },
       signal: AbortSignal.timeout(20_000),
     });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       return {
-        locale,
-        fetchedAt,
-        source: "scrape.do",
+        ok: false,
         data: [],
-        error: `HTTP ${res.status}: ${body.slice(0, 200)}`,
+        error: `HTTP ${res.status}: ${body.slice(0, 160)}`,
+        body,
       };
     }
     const text = await res.text();
+    // Detect Google consent interstitials / non-RSS bodies.
+    const looksLikeRss = text.includes("<item") && text.includes("<rss");
+    if (!looksLikeRss) {
+      return {
+        ok: false,
+        data: [],
+        error: "Non-RSS body (consent page or block)",
+        body: text,
+      };
+    }
     const data = parseTrendsRss(text);
     return {
-      locale,
-      fetchedAt,
-      source: "scrape.do",
+      ok: true,
       data,
-      error:
-        data.length === 0
-          ? text.includes("<item")
-            ? "Parsed 0 items"
-            : "Upstream returned non-RSS body"
-          : null,
+      error: data.length === 0 ? "Parsed 0 items" : null,
+      body: text,
     };
   } catch (e) {
     return {
-      locale,
-      fetchedAt,
-      source: "scrape.do",
+      ok: false,
       data: [],
       error: e instanceof Error ? e.message : String(e),
     };
   }
+}
+
+export async function fetchGoogleTrends(
+  locale: string
+): Promise<TrendsSnapshot> {
+  const fetchedAt = new Date().toISOString();
+  const target = buildTrendsUrl(locale);
+
+  // 1. Direct fetch — free, fast, usually works.
+  const direct = await tryFetch(target);
+  if (direct.ok && direct.data.length > 0) {
+    return {
+      locale,
+      fetchedAt,
+      source: "google-direct",
+      data: direct.data,
+      error: null,
+    };
+  }
+
+  // 2. Fall back to scrape.do if the direct call failed or returned no items
+  //    and a token is configured. Bubbles up direct-fetch error otherwise so
+  //    the UI can explain why the snapshot is empty.
+  const token = process.env.SCRAPE_DO_TOKEN;
+  if (!token) {
+    return {
+      locale,
+      fetchedAt,
+      source: "google-direct",
+      data: direct.data,
+      error:
+        direct.error ??
+        "No items. Set SCRAPE_DO_TOKEN to enable the fallback proxy.",
+    };
+  }
+  const proxied = await tryFetch(
+    `${SCRAPE_DO_BASE}/?token=${encodeURIComponent(
+      token
+    )}&url=${encodeURIComponent(target)}`
+  );
+  if (proxied.ok && proxied.data.length > 0) {
+    return {
+      locale,
+      fetchedAt,
+      source: "scrape.do",
+      data: proxied.data,
+      error: null,
+    };
+  }
+  return {
+    locale,
+    fetchedAt,
+    source: "scrape.do",
+    data: proxied.data,
+    error:
+      proxied.error ??
+      direct.error ??
+      "Unknown error fetching trends",
+  };
 }
 
 export async function persistSnapshot(snap: TrendsSnapshot): Promise<void> {
