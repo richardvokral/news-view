@@ -82,6 +82,20 @@ CREATE TABLE IF NOT EXISTS article_source_snapshots (
 CREATE INDEX IF NOT EXISTS article_source_snapshots_page_idx
   ON article_source_snapshots(page_path, captured_at DESC);
 
+-- Per-article author attribution snapshots. Populated when
+-- monitor_config.author_sampling_enabled is true; one call per
+-- top-sampled article per tick pulls the author list from Plausible.
+CREATE TABLE IF NOT EXISTS article_author_snapshots (
+  id BIGSERIAL PRIMARY KEY,
+  page_path TEXT NOT NULL REFERENCES article_monitors(page_path) ON DELETE CASCADE,
+  captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  name TEXT NOT NULL,
+  visitors INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS article_author_snapshots_page_idx
+  ON article_author_snapshots(page_path, captured_at DESC);
+
 -- Article title history (populated when rss_enabled and the site has an RSS
 -- URL configured). Append-only: a new row is inserted only when the title
 -- observed on the RSS feed differs from the previous latest row.
@@ -115,6 +129,7 @@ CREATE TABLE IF NOT EXISTS monitor_config (
   site_rss_urls JSONB NOT NULL DEFAULT '{}'::jsonb,
   show_article_images BOOLEAN NOT NULL DEFAULT false,
   author_short_names JSONB NOT NULL DEFAULT '{}'::jsonb,
+  author_sampling_enabled BOOLEAN NOT NULL DEFAULT false,
   updated_by TEXT,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -129,4 +144,5 @@ ALTER TABLE monitor_config
   ADD COLUMN IF NOT EXISTS rss_enabled BOOLEAN NOT NULL DEFAULT false,
   ADD COLUMN IF NOT EXISTS site_rss_urls JSONB NOT NULL DEFAULT '{}'::jsonb,
   ADD COLUMN IF NOT EXISTS show_article_images BOOLEAN NOT NULL DEFAULT false,
-  ADD COLUMN IF NOT EXISTS author_short_names JSONB NOT NULL DEFAULT '{}'::jsonb;
+  ADD COLUMN IF NOT EXISTS author_short_names JSONB NOT NULL DEFAULT '{}'::jsonb,
+  ADD COLUMN IF NOT EXISTS author_sampling_enabled BOOLEAN NOT NULL DEFAULT false;

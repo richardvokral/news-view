@@ -145,6 +145,7 @@ export interface MonitorConfig {
   siteRssUrls: Record<string, string>;
   showArticleImages: boolean;
   authorShortNames: Record<string, string>;
+  authorSamplingEnabled: boolean;
   updatedBy: string | null;
   updatedAt: string | null;
 }
@@ -165,6 +166,7 @@ export const DEFAULT_MONITOR_CONFIG: MonitorConfig = {
   siteRssUrls: {},
   showArticleImages: false,
   authorShortNames: {},
+  authorSamplingEnabled: false,
   updatedBy: null,
   updatedAt: null,
 };

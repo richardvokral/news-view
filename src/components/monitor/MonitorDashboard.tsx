@@ -36,6 +36,7 @@ interface Article {
   imageUrl: string | null;
   titleUpdatedAt: string | null;
   hasStoredSources: boolean;
+  topAuthors: { name: string; visitors: number }[];
 }
 
 interface Props {
@@ -60,12 +61,28 @@ type SortKey =
   | "trend";
 type SortDir = "asc" | "desc";
 
-const HOUR_OPTIONS = [
+const BASE_HOUR_OPTIONS = [
   { value: 1, label: "1 hour", short: "1h" },
   { value: 6, label: "6 hours", short: "6h" },
   { value: 24, label: "24 hours", short: "24h" },
+  { value: 48, label: "2 days", short: "2d" },
   { value: 72, label: "3 days", short: "3d" },
 ];
+
+function buildHourOptions(defaultHours: number) {
+  const options = [...BASE_HOUR_OPTIONS];
+  if (!options.some((o) => o.value === defaultHours)) {
+    const label = defaultHours % 24 === 0
+      ? `${defaultHours / 24} days`
+      : `${defaultHours} hours`;
+    const short = defaultHours % 24 === 0
+      ? `${defaultHours / 24}d`
+      : `${defaultHours}h`;
+    options.push({ value: defaultHours, label, short });
+    options.sort((a, b) => a.value - b.value);
+  }
+  return options;
+}
 
 const NUMERIC_OPS: readonly NumericOp[] = [">", ">=", "<", "<="] as const;
 
@@ -166,6 +183,9 @@ export default function MonitorDashboard({
 
   const hoursParam = searchParams.get("hours");
   const hours = hoursParam ? Math.max(1, Number(hoursParam)) : defaultHours;
+  const hourOptions = useMemo(() => buildHourOptions(defaultHours), [
+    defaultHours,
+  ]);
   const { key: sortKey, dir: sortDir } = sortFromParams(searchParams);
   const filters = useMemo(
     () => filtersFromParams(searchParams),
@@ -354,14 +374,67 @@ export default function MonitorDashboard({
     return () => ctrl.abort();
   }, [sourceFilter, currentSite, hours]);
 
+  // Fetch per-page contributions for hidden sources so we can subtract them
+  // from the article visitor/pageview counts.
+  const [hiddenContribs, setHiddenContribs] = useState<{
+    hiddenKey: string;
+    contributions: Record<string, { visitors: number; pageviews: number }>;
+  } | null>(null);
+  const hiddenKey = hiddenSources.join("|");
+  useEffect(() => {
+    if (hiddenKey === "" || !currentSite) return;
+    const ctrl = new AbortController();
+    const params = new URLSearchParams({
+      site: currentSite,
+      hours: String(hours),
+      sources: hiddenKey.split("|").join(","),
+    });
+    fetch(`/api/monitor/source-contributions?${params}`, { signal: ctrl.signal })
+      .then((r) => (r.ok ? r.json() : Promise.reject(`HTTP ${r.status}`)))
+      .then((d) => {
+        setHiddenContribs({
+          hiddenKey,
+          contributions: (d.contributions ?? {}) as Record<
+            string,
+            { visitors: number; pageviews: number }
+          >,
+        });
+      })
+      .catch((e) => {
+        if ((e as { name?: string }).name === "AbortError") return;
+        setHiddenContribs({ hiddenKey, contributions: {} });
+      });
+    return () => ctrl.abort();
+  }, [hiddenKey, currentSite, hours]);
+  const hiddenContribMap =
+    hiddenKey === "" || hiddenContribs?.hiddenKey !== hiddenKey
+      ? null
+      : hiddenContribs.contributions;
+
   const withTrend = useMemo(
     () =>
-      (articles ?? []).map((a) => ({
-        ...a,
-        trendScore: computeTrendScore(a.snapshots, trendWindowMinutes),
-        firstHourGrowth: computeFirstHourGrowth(a.snapshots, a.firstSeenAt),
-      })),
-    [articles, trendWindowMinutes]
+      (articles ?? []).map((a) => {
+        const sub = hiddenContribMap?.[a.pagePath];
+        const adjustedVisitors = sub
+          ? Math.max(0, a.currentVisitors - (sub.visitors || 0))
+          : a.currentVisitors;
+        const adjustedPageviews = sub
+          ? Math.max(0, a.currentPageviews - (sub.pageviews || 0))
+          : a.currentPageviews;
+        return {
+          ...a,
+          currentVisitors: adjustedVisitors,
+          currentPageviews: adjustedPageviews,
+          rawVisitors: a.currentVisitors,
+          rawPageviews: a.currentPageviews,
+          hiddenSubtracted: sub
+            ? { visitors: sub.visitors || 0, pageviews: sub.pageviews || 0 }
+            : null,
+          trendScore: computeTrendScore(a.snapshots, trendWindowMinutes),
+          firstHourGrowth: computeFirstHourGrowth(a.snapshots, a.firstSeenAt),
+        };
+      }),
+    [articles, trendWindowMinutes, hiddenContribMap]
   );
 
   const filtered = useMemo(() => {
@@ -465,7 +538,7 @@ export default function MonitorDashboard({
               aria-label="Time window"
               className="flex rounded-lg border border-gray-300 bg-white p-0.5"
             >
-              {HOUR_OPTIONS.map((o) => {
+              {hourOptions.map((o) => {
                 const active = hours === o.value;
                 return (
                   <button
@@ -743,7 +816,13 @@ function FlameIcon() {
 }
 
 interface ArticleRowProps {
-  article: Article & { trendScore: number; firstHourGrowth: number | null };
+  article: Article & {
+    trendScore: number;
+    firstHourGrowth: number | null;
+    rawVisitors: number;
+    rawPageviews: number;
+    hiddenSubtracted: { visitors: number; pageviews: number } | null;
+  };
   expanded: boolean;
   onToggle: () => void;
   liveUrl: string;
@@ -827,14 +906,64 @@ function ArticleRow({
                 </a>
               </div>
               <div className="truncate text-xs text-gray-400">{a.pagePath}</div>
+              {a.topAuthors.length > 0 && (
+                <div className="mt-1 flex flex-wrap items-center gap-1">
+                  {a.topAuthors.slice(0, 3).map((au) => {
+                    const full = authorShortNames[au.name] ?? au.name;
+                    return (
+                      <span
+                        key={au.name}
+                        className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700"
+                        title={
+                          full === au.name
+                            ? `${au.name}: ${au.visitors.toLocaleString()} visitors`
+                            : `${au.name} → ${full}: ${au.visitors.toLocaleString()} visitors`
+                        }
+                      >
+                        {full}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </td>
-        <td className="px-2 py-3 text-right text-base font-semibold tabular-nums text-gray-900">
+        <td
+          className="px-2 py-3 text-right text-base font-semibold tabular-nums text-gray-900"
+          title={
+            a.hiddenSubtracted
+              ? `Original: ${a.rawVisitors.toLocaleString()} · Hidden sources contributed ${a.hiddenSubtracted.visitors.toLocaleString()}`
+              : undefined
+          }
+        >
           {a.currentVisitors.toLocaleString()}
+          {a.hiddenSubtracted && a.hiddenSubtracted.visitors > 0 && (
+            <span
+              className="ml-1 text-[10px] font-normal text-amber-600"
+              aria-hidden
+            >
+              *
+            </span>
+          )}
         </td>
-        <td className="px-2 py-3 text-right tabular-nums text-gray-600">
+        <td
+          className="px-2 py-3 text-right tabular-nums text-gray-600"
+          title={
+            a.hiddenSubtracted
+              ? `Original: ${a.rawPageviews.toLocaleString()}`
+              : undefined
+          }
+        >
           {a.currentPageviews.toLocaleString()}
+          {a.hiddenSubtracted && a.hiddenSubtracted.pageviews > 0 && (
+            <span
+              className="ml-1 text-[10px] font-normal text-amber-600"
+              aria-hidden
+            >
+              *
+            </span>
+          )}
         </td>
         <td
           className="px-2 py-3 text-right tabular-nums text-gray-600"

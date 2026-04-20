@@ -70,6 +70,8 @@ export async function PUT(request: NextRequest) {
       }
       clean.authorShortNames = an;
     }
+    if (typeof body.authorSamplingEnabled === "boolean")
+      clean.authorSamplingEnabled = body.authorSamplingEnabled;
     await saveMonitorConfig(gate.email, clean);
     const updated = await getMonitorConfig();
     return NextResponse.json({ config: updated });

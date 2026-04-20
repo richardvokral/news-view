@@ -26,6 +26,7 @@ export interface ArticleWithStats {
   imageUrl: string | null;
   titleUpdatedAt: string | null;
   hasStoredSources: boolean;
+  topAuthors: { name: string; visitors: number }[];
 }
 
 export interface TitleHistoryRow {
@@ -87,6 +88,32 @@ export async function insertArticleSourceSnapshot(
      VALUES ($1, $2, $3, $4)`,
     [pagePath, capturedAt, source, visitors]
   );
+}
+
+export async function insertArticleAuthorSnapshot(
+  pagePath: string,
+  capturedAt: Date,
+  name: string,
+  visitors: number
+): Promise<void> {
+  if (!hasDb()) return;
+  await getDb().query(
+    `INSERT INTO article_author_snapshots (page_path, captured_at, name, visitors)
+     VALUES ($1, $2, $3, $4)`,
+    [pagePath, capturedAt, name, visitors]
+  );
+}
+
+export async function pruneArticleAuthorSnapshots(
+  retentionDays: number
+): Promise<number> {
+  if (!hasDb()) return 0;
+  const cutoff = new Date(Date.now() - retentionDays * 24 * 3600 * 1000);
+  const result = await getDb().query(
+    `DELETE FROM article_author_snapshots WHERE captured_at < $1`,
+    [cutoff]
+  );
+  return result.rowCount ?? 0;
 }
 
 /**
@@ -236,6 +263,39 @@ export async function listArticlesWithRecentStats(
     }
   }
 
+  // Latest author snapshot per (page, name) within the window, top 3 by
+  // visitors. Safe when the author table is empty — just returns no rows.
+  const authorCutoff = cutoff;
+  const { rows: authorRows } = await getDb().query<{
+    page_path: string;
+    name: string;
+    visitors: number;
+  }>(
+    `SELECT page_path, name, visitors FROM (
+       SELECT page_path, name, visitors,
+              ROW_NUMBER() OVER (
+                PARTITION BY page_path
+                ORDER BY visitors DESC, captured_at DESC
+              ) AS rank
+         FROM (
+           SELECT DISTINCT ON (page_path, name)
+                  page_path, name, visitors, captured_at
+             FROM article_author_snapshots
+            WHERE page_path = ANY($1::text[])
+              AND captured_at >= $2
+            ORDER BY page_path, name, captured_at DESC
+         ) latest
+     ) ranked
+     WHERE rank <= 3`,
+    [paths, authorCutoff]
+  );
+  const authorsByPath = new Map<string, { name: string; visitors: number }[]>();
+  for (const r of authorRows) {
+    const arr = authorsByPath.get(r.page_path) ?? [];
+    arr.push({ name: r.name, visitors: Number(r.visitors) || 0 });
+    authorsByPath.set(r.page_path, arr);
+  }
+
   return articles.map((a) => {
     const snapshots = (byPath.get(a.page_path) ?? []).slice().reverse();
     const latest = snapshots[snapshots.length - 1];
@@ -251,6 +311,7 @@ export async function listArticlesWithRecentStats(
       imageUrl: a.image_url,
       titleUpdatedAt: a.title_updated_at,
       hasStoredSources: a.has_stored_sources === true,
+      topAuthors: authorsByPath.get(a.page_path) ?? [],
     };
   });
 }

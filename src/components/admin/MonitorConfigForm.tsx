@@ -15,9 +15,15 @@ interface TickResult {
     siteId: string;
     articles: number;
     sources?: number;
+    authors?: number;
     titles?: number;
   }[];
-  pruned?: { snapshots: number; monitors: number; sources?: number };
+  pruned?: {
+    snapshots: number;
+    monitors: number;
+    sources?: number;
+    authors?: number;
+  };
   requestsThisHour?: number;
   error?: string;
 }
@@ -414,6 +420,38 @@ export default function MonitorConfigForm({ initial, sites }: Props) {
           rows={4}
           className="w-full rounded-md border border-gray-300 px-3 py-1.5 font-mono text-xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
         />
+
+        <div className="mt-4 flex items-start gap-3 border-t border-gray-200 pt-3">
+          <button
+            type="button"
+            onClick={() =>
+              setField("authorSamplingEnabled", !config.authorSamplingEnabled)
+            }
+            className={`relative h-6 w-11 flex-shrink-0 rounded-full transition-colors ${
+              config.authorSamplingEnabled ? "bg-blue-600" : "bg-gray-300"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                config.authorSamplingEnabled ? "left-5" : "left-0.5"
+              }`}
+            />
+          </button>
+          <div>
+            <p className="text-sm font-medium text-gray-900">
+              Author sampling
+            </p>
+            <p className="text-xs text-gray-500">
+              Each tick, pull the top authors (custom goal{" "}
+              <code className="rounded bg-gray-100 px-1 text-[11px]">author</code>
+              {" "}with property{" "}
+              <code className="rounded bg-gray-100 px-1 text-[11px]">name</code>)
+              for the top-N articles and store them so author tags can render
+              inline on the main monitor row. Costs one Plausible call per
+              sampled article per tick per site.
+            </p>
+          </div>
+        </div>
       </div>
 
       {config.updatedAt && (
@@ -481,6 +519,8 @@ export default function MonitorConfigForm({ initial, sites }: Props) {
                     : {s.articles} article{s.articles === 1 ? "" : "s"}
                     {typeof s.sources === "number" &&
                       `, ${s.sources} source row${s.sources === 1 ? "" : "s"}`}
+                    {typeof s.authors === "number" && s.authors > 0 &&
+                      `, ${s.authors} author row${s.authors === 1 ? "" : "s"}`}
                     {typeof s.titles === "number" && s.titles > 0 &&
                       `, ${s.titles} title change${s.titles === 1 ? "" : "s"}`}
                   </li>

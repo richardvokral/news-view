@@ -6,10 +6,12 @@ import {
   upsertArticle,
   insertSnapshot,
   insertArticleSourceSnapshot,
+  insertArticleAuthorSnapshot,
   insertArticleTitle,
   getLatestTitle,
   pruneSnapshots,
   pruneArticleSourceSnapshots,
+  pruneArticleAuthorSnapshots,
   pruneMonitors,
 } from "./queries";
 
@@ -20,9 +22,15 @@ interface TickResult {
     siteId: string;
     articles: number;
     sources: number;
+    authors?: number;
     titles?: number;
   }[];
-  pruned: { snapshots: number; monitors: number; sources: number };
+  pruned: {
+    snapshots: number;
+    monitors: number;
+    sources: number;
+    authors?: number;
+  };
   requestsThisHour: number;
 }
 
@@ -38,7 +46,7 @@ export async function runMonitorTick(): Promise<TickResult> {
       ok: true,
       skippedReason: "disabled",
       sites: [],
-      pruned: { snapshots: 0, monitors: 0, sources: 0 },
+      pruned: { snapshots: 0, monitors: 0, sources: 0, authors: 0 },
       requestsThisHour: 0,
     };
   }
@@ -49,7 +57,7 @@ export async function runMonitorTick(): Promise<TickResult> {
       ok: true,
       skippedReason: "no_sites",
       sites: [],
-      pruned: { snapshots: 0, monitors: 0, sources: 0 },
+      pruned: { snapshots: 0, monitors: 0, sources: 0, authors: 0 },
       requestsThisHour: 0,
     };
   }
@@ -62,7 +70,7 @@ export async function runMonitorTick(): Promise<TickResult> {
       ok: true,
       skippedReason: "rate_capped",
       sites: [],
-      pruned: { snapshots: 0, monitors: 0, sources: 0 },
+      pruned: { snapshots: 0, monitors: 0, sources: 0, authors: 0 },
       requestsThisHour: currentCount,
     };
   }
@@ -73,6 +81,7 @@ export async function runMonitorTick(): Promise<TickResult> {
     siteId: string;
     articles: number;
     sources: number;
+    authors?: number;
     titles?: number;
   }[] = [];
 
@@ -100,20 +109,37 @@ export async function runMonitorTick(): Promise<TickResult> {
     cfg.sourceSamplingEnabled && cfg.sourceSamplingTopN > 0
       ? sites.length * cfg.sourceSamplingTopN
       : 0;
+  const authorBudget =
+    cfg.authorSamplingEnabled && cfg.sourceSamplingTopN > 0
+      ? sites.length * cfg.sourceSamplingTopN
+      : 0;
   const canSampleSources =
     sourceBudget > 0 &&
-    currentCount + sites.length + sourceBudget <= cfg.maxRequestsPerHour;
+    currentCount + sites.length + sourceBudget + authorBudget <=
+      cfg.maxRequestsPerHour;
   if (cfg.sourceSamplingEnabled && !canSampleSources) {
     console.warn(
       `monitor: source sampling skipped this tick (budget ${
         cfg.maxRequestsPerHour
-      } would be exceeded by ${currentCount + sites.length + sourceBudget})`
+      } would be exceeded by ${
+        currentCount + sites.length + sourceBudget + authorBudget
+      })`
+    );
+  }
+  const canSampleAuthors =
+    authorBudget > 0 &&
+    currentCount + sites.length + sourceBudget + authorBudget <=
+      cfg.maxRequestsPerHour;
+  if (cfg.authorSamplingEnabled && !canSampleAuthors) {
+    console.warn(
+      `monitor: author sampling skipped this tick (budget ${cfg.maxRequestsPerHour} would be exceeded)`
     );
   }
 
   let callsMade = 0;
   for (const siteId of sites) {
     let sampledSources = 0;
+    let sampledAuthors = 0;
     try {
       const raw = (await getBreakdown(siteId, {
         property: "event:page",
@@ -200,16 +226,61 @@ export async function runMonitorTick(): Promise<TickResult> {
         }
       }
 
+      if (canSampleAuthors && rows.length > 0) {
+        const top = [...rows]
+          .sort(
+            (a, b) => (Number(b.visitors) || 0) - (Number(a.visitors) || 0)
+          )
+          .slice(0, cfg.sourceSamplingTopN);
+        for (const row of top) {
+          try {
+            const ar = (await getBreakdown(siteId, {
+              property: "event:props:name",
+              metrics: "visitors",
+              period: "day",
+              date: today,
+              filters: `event:goal==author;event:page==${row.page}`,
+              limit: 5,
+            })) as { results?: { name: string; visitors: number }[] };
+            callsMade += 1;
+            for (const a of ar.results || []) {
+              const name = String(a.name || "").trim();
+              if (!name || name === "(none)") continue;
+              await insertArticleAuthorSnapshot(
+                row.page,
+                now,
+                name,
+                Number(a.visitors) || 0
+              );
+              sampledAuthors += 1;
+            }
+          } catch (e) {
+            console.error(
+              `monitor author sample failed for ${siteId} ${row.page}:`,
+              e
+            );
+            callsMade += 1;
+          }
+        }
+      }
+
       perSite.push({
         siteId,
         articles: rows.length,
         sources: sampledSources,
+        authors: sampledAuthors,
         titles: titlesWritten,
       });
     } catch (e) {
       console.error(`monitor tick failed for ${siteId}:`, e);
       callsMade += 1;
-      perSite.push({ siteId, articles: 0, sources: 0, titles: 0 });
+      perSite.push({
+        siteId,
+        articles: 0,
+        sources: 0,
+        authors: 0,
+        titles: 0,
+      });
     }
   }
   if (callsMade > 0) {
@@ -219,12 +290,18 @@ export async function runMonitorTick(): Promise<TickResult> {
 
   const snapPruned = await pruneSnapshots(cfg.retentionDays);
   const srcPruned = await pruneArticleSourceSnapshots(cfg.retentionDays);
+  const authorPruned = await pruneArticleAuthorSnapshots(cfg.retentionDays);
   const monPruned = await pruneMonitors(cfg.windowHours);
 
   return {
     ok: true,
     sites: perSite,
-    pruned: { snapshots: snapPruned, monitors: monPruned, sources: srcPruned },
+    pruned: {
+      snapshots: snapPruned,
+      monitors: monPruned,
+      sources: srcPruned,
+      authors: authorPruned,
+    },
     requestsThisHour: currentCount + callsMade,
   };
 }

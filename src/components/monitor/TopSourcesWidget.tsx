@@ -27,6 +27,16 @@ function matchesHidden(source: string, hidden: string[]): boolean {
   });
 }
 
+interface Meta {
+  rawCount: number;
+  excludedCount: number;
+  adminExcluded: string[];
+  error: string | null;
+  fetchedAt: string;
+  site: string;
+  hours: number;
+}
+
 export default function TopSourcesWidget({
   site,
   hours,
@@ -38,6 +48,7 @@ export default function TopSourcesWidget({
   onClearHidden,
 }: Props) {
   const [sources, setSources] = useState<SourceRow[] | null>(null);
+  const [meta, setMeta] = useState<Meta | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -50,6 +61,7 @@ export default function TopSourcesWidget({
         .then((data) => {
           if (cancelled) return;
           setSources((data.sources || []) as SourceRow[]);
+          setMeta((data.meta ?? null) as Meta | null);
           setError(null);
         })
         .catch((e) => {
@@ -101,11 +113,39 @@ export default function TopSourcesWidget({
       ) : error ? (
         <p className="text-xs text-red-600">{error}</p>
       ) : shown.length === 0 ? (
-        <p className="text-xs text-gray-400">
-          {list.length === 0
-            ? "No source data yet."
-            : "All sources are hidden in this session."}
-        </p>
+        <div className="space-y-1 text-xs text-gray-500">
+          {list.length === 0 ? (
+            <>
+              {meta?.error ? (
+                <p className="text-red-600">
+                  Plausible error: {meta.error}
+                </p>
+              ) : meta && meta.rawCount === 0 ? (
+                <p>
+                  Plausible returned 0 sources for <code>{meta.site}</code> on
+                  today&rsquo;s window. Either the site has no traffic yet today
+                  or the site id doesn&rsquo;t match.
+                </p>
+              ) : meta && meta.excludedCount > 0 ? (
+                <p>
+                  All {meta.rawCount} returned sources were filtered by the
+                  admin <code>excluded_sources</code> list (
+                  {meta.adminExcluded.join(", ")}).
+                </p>
+              ) : (
+                <p>No source data yet.</p>
+              )}
+              {meta && (
+                <p className="text-[10px] text-gray-400">
+                  Last checked {new Date(meta.fetchedAt).toLocaleTimeString()} ·
+                  raw={meta.rawCount} excluded={meta.excludedCount}
+                </p>
+              )}
+            </>
+          ) : (
+            <p>All sources are hidden in this session.</p>
+          )}
+        </div>
       ) : (
         <div className="flex flex-wrap gap-2">
           {shown.map((s) => {
@@ -153,18 +193,25 @@ export default function TopSourcesWidget({
         </div>
       )}
       {hiddenSources.length > 0 && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3 text-[11px]">
-          <span className="uppercase text-gray-400">Hidden:</span>
-          {hiddenSources.map((s) => (
-            <button
-              key={s}
-              onClick={() => onUnhide(s)}
-              className="rounded border border-dashed border-gray-300 px-2 py-0.5 text-gray-500 hover:border-gray-400 hover:text-gray-700"
-              title="Click to show again"
-            >
-              {s} ↺
-            </button>
-          ))}
+        <div className="mt-3 space-y-1 border-t border-gray-100 pt-3 text-[11px]">
+          <p className="text-gray-500">
+            Visitor and pageview counts with a{" "}
+            <span className="font-semibold text-amber-600">*</span> in the table
+            below have had the hidden sources subtracted.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="uppercase text-gray-400">Hidden:</span>
+            {hiddenSources.map((s) => (
+              <button
+                key={s}
+                onClick={() => onUnhide(s)}
+                className="rounded border border-dashed border-gray-300 px-2 py-0.5 text-gray-500 hover:border-gray-400 hover:text-gray-700"
+                title="Click to show again"
+              >
+                {s} ↺
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>

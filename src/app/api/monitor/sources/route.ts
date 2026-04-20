@@ -110,23 +110,60 @@ export async function GET(request: NextRequest) {
 
   const excludedKey = excluded.join("|");
   const key = `monitor:sources:${site}:${hours}:excl:${excludedKey}`;
-  const data = await cachedJSON(key, async () => {
-    const res = (await getBreakdown(site, {
-      property: "visit:source",
-      metrics: "visitors",
-      period: "day",
-      date: today,
-      limit: 30,
-    })) as { results?: PlausibleSourceRow[] };
-    const sources = (res.results || [])
-      .map((r) => ({
+  try {
+    const data = await cachedJSON(key, async () => {
+      let rawRows: PlausibleSourceRow[] = [];
+      let fetchError: string | null = null;
+      try {
+        const res = (await getBreakdown(site, {
+          property: "visit:source",
+          metrics: "visitors",
+          period: "day",
+          date: today,
+          limit: 30,
+        })) as { results?: PlausibleSourceRow[] };
+        rawRows = res.results || [];
+      } catch (e) {
+        fetchError = e instanceof Error ? e.message : String(e);
+        console.error("top sources plausible fetch failed:", e);
+      }
+      const mapped = rawRows.map((r) => ({
         source: String(r.source),
         visitors: Number(r.visitors) || 0,
-      }))
-      .filter((r) => !isExcluded(r.source, excluded))
-      .sort((a, b) => b.visitors - a.visitors)
-      .slice(0, 20);
-    return { sources };
-  });
-  return NextResponse.json(data);
+      }));
+      const afterExclude = mapped.filter(
+        (r) => !isExcluded(r.source, excluded)
+      );
+      const sources = afterExclude
+        .sort((a, b) => b.visitors - a.visitors)
+        .slice(0, 20);
+      return {
+        sources,
+        meta: {
+          rawCount: mapped.length,
+          excludedCount: mapped.length - afterExclude.length,
+          adminExcluded: excluded,
+          error: fetchError,
+          fetchedAt: new Date().toISOString(),
+          site,
+          hours,
+        },
+      };
+    });
+    return NextResponse.json(data);
+  } catch (e) {
+    console.error("sources handler fatal:", e);
+    return NextResponse.json({
+      sources: [],
+      meta: {
+        rawCount: 0,
+        excludedCount: 0,
+        adminExcluded: excluded,
+        error: e instanceof Error ? e.message : String(e),
+        fetchedAt: new Date().toISOString(),
+        site,
+        hours,
+      },
+    });
+  }
 }
