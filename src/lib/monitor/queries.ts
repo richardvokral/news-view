@@ -387,7 +387,7 @@ export async function listSourceTimeseriesForArticle(
   if (!hasDb()) return [];
   const cutoff = new Date(Date.now() - windowHours * 3600 * 1000);
   const { rows } = await getDb().query<{
-    captured_at: string;
+    captured_at: string | Date;
     source: string;
     visitors: number;
   }>(
@@ -398,7 +398,10 @@ export async function listSourceTimeseriesForArticle(
     [pagePath, cutoff]
   );
   return rows.map((r) => ({
-    capturedAt: r.captured_at,
+    capturedAt:
+      r.captured_at instanceof Date
+        ? r.captured_at.toISOString()
+        : String(r.captured_at),
     source: r.source,
     visitors: Number(r.visitors) || 0,
   }));

@@ -40,12 +40,16 @@ function buildTimeseries(
   const byTime = new Map<string, Record<string, number>>();
   for (const r of rows) {
     if (!top.has(r.source)) continue;
-    const values = byTime.get(r.capturedAt) ?? {};
+    const key =
+      typeof r.capturedAt === "string"
+        ? r.capturedAt
+        : new Date(r.capturedAt as unknown as string | number | Date).toISOString();
+    const values = byTime.get(key) ?? {};
     values[r.source] = r.visitors;
-    byTime.set(r.capturedAt, values);
+    byTime.set(key, values);
   }
   return Array.from(byTime.entries())
-    .sort((a, b) => a[0].localeCompare(b[0]))
+    .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
     .map(([capturedAt, values]) => ({ capturedAt, values }));
 }
 

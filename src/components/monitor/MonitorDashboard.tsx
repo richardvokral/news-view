@@ -420,30 +420,76 @@ export default function MonitorDashboard({
       ? null
       : hiddenContribs.contributions;
 
+  // Fetch per-page contributions for the active source filter so the
+  // visitor/pageview columns can show "visitors from that source".
+  const [filterContribs, setFilterContribs] = useState<{
+    source: string;
+    contributions: Record<string, { visitors: number; pageviews: number }>;
+  } | null>(null);
+  useEffect(() => {
+    if (!sourceFilter || !currentSite) return;
+    const ctrl = new AbortController();
+    const params = new URLSearchParams({
+      site: currentSite,
+      hours: String(hours),
+      sources: sourceFilter,
+    });
+    fetch(`/api/monitor/source-contributions?${params}`, { signal: ctrl.signal })
+      .then((r) => (r.ok ? r.json() : Promise.reject(`HTTP ${r.status}`)))
+      .then((d) => {
+        setFilterContribs({
+          source: sourceFilter,
+          contributions: (d.contributions ?? {}) as Record<
+            string,
+            { visitors: number; pageviews: number }
+          >,
+        });
+      })
+      .catch((e) => {
+        if ((e as { name?: string }).name === "AbortError") return;
+        setFilterContribs({ source: sourceFilter, contributions: {} });
+      });
+    return () => ctrl.abort();
+  }, [sourceFilter, currentSite, hours]);
+  const filterContribMap =
+    sourceFilter && filterContribs?.source === sourceFilter
+      ? filterContribs.contributions
+      : null;
+
   const withTrend = useMemo(
     () =>
       (articles ?? []).map((a) => {
         const sub = hiddenContribMap?.[a.pagePath];
-        const adjustedVisitors = sub
+        let currentVisitors = sub
           ? Math.max(0, a.currentVisitors - (sub.visitors || 0))
           : a.currentVisitors;
-        const adjustedPageviews = sub
+        let currentPageviews = sub
           ? Math.max(0, a.currentPageviews - (sub.pageviews || 0))
           : a.currentPageviews;
+        let filterAttributed: { visitors: number; pageviews: number } | null = null;
+        if (filterContribMap) {
+          const fc = filterContribMap[a.pagePath];
+          filterAttributed = fc
+            ? { visitors: fc.visitors || 0, pageviews: fc.pageviews || 0 }
+            : { visitors: 0, pageviews: 0 };
+          currentVisitors = filterAttributed.visitors;
+          currentPageviews = filterAttributed.pageviews;
+        }
         return {
           ...a,
-          currentVisitors: adjustedVisitors,
-          currentPageviews: adjustedPageviews,
+          currentVisitors,
+          currentPageviews,
           rawVisitors: a.currentVisitors,
           rawPageviews: a.currentPageviews,
           hiddenSubtracted: sub
             ? { visitors: sub.visitors || 0, pageviews: sub.pageviews || 0 }
             : null,
+          filterAttributed,
           trendScore: computeTrendScore(a.snapshots, trendWindowMinutes),
           firstHourGrowth: computeFirstHourGrowth(a.snapshots, a.firstSeenAt),
         };
       }),
-    [articles, trendWindowMinutes, hiddenContribMap]
+    [articles, trendWindowMinutes, hiddenContribMap, filterContribMap]
   );
 
   const filtered = useMemo(() => {
@@ -661,7 +707,9 @@ export default function MonitorDashboard({
                       {" "}= {total} page{total === 1 ? "" : "s"}, of which{" "}
                       <strong>{visibleMatches}</strong>{" "}
                       {visibleMatches === 1 ? "is" : "are"} in the current
-                      window.
+                      window. Visitor/pageview numbers below show this
+                      source&rsquo;s contribution only (
+                      <span className="text-blue-600">⌖</span>).
                     </span>
                     <button
                       onClick={() => setSourceFilter(null)}
@@ -799,6 +847,7 @@ export default function MonitorDashboard({
                           sourceTimeseriesEnabled={sourceTimeseriesEnabled}
                           showArticleImages={showArticleImages}
                           authorShortNames={authorShortNames}
+                          activeSourceFilter={sourceFilter}
                         />
                       );
                     })
@@ -909,7 +958,9 @@ interface ArticleRowProps {
     rawVisitors: number;
     rawPageviews: number;
     hiddenSubtracted: { visitors: number; pageviews: number } | null;
+    filterAttributed: { visitors: number; pageviews: number } | null;
   };
+  activeSourceFilter: string | null;
   expanded: boolean;
   onToggle: () => void;
   liveUrl: string;
@@ -932,6 +983,7 @@ function ArticleRow({
   sourceTimeseriesEnabled,
   showArticleImages,
   authorShortNames,
+  activeSourceFilter,
 }: ArticleRowProps) {
   const displayTitle = a.title ?? parseArticleName(a.pagePath);
   const titleSource: "rss" | "path" = a.title ? "rss" : "path";
@@ -1028,38 +1080,62 @@ function ArticleRow({
         <td
           className="px-2 py-3 text-right text-base font-semibold tabular-nums text-gray-900"
           title={
-            a.hiddenSubtracted
+            a.filterAttributed
+              ? `Visitors from ${activeSourceFilter}: ${a.currentVisitors.toLocaleString()} of ${a.rawVisitors.toLocaleString()} total`
+              : a.hiddenSubtracted
               ? `Original: ${a.rawVisitors.toLocaleString()} · Hidden sources contributed ${a.hiddenSubtracted.visitors.toLocaleString()}`
               : undefined
           }
         >
           {a.currentVisitors.toLocaleString()}
-          {a.hiddenSubtracted && a.hiddenSubtracted.visitors > 0 && (
+          {a.filterAttributed && (
             <span
-              className="ml-1 text-[10px] font-normal text-amber-600"
+              className="ml-1 text-[10px] font-normal text-blue-600"
               aria-hidden
             >
-              *
+              ⌖
             </span>
           )}
+          {!a.filterAttributed &&
+            a.hiddenSubtracted &&
+            a.hiddenSubtracted.visitors > 0 && (
+              <span
+                className="ml-1 text-[10px] font-normal text-amber-600"
+                aria-hidden
+              >
+                *
+              </span>
+            )}
         </td>
         <td
           className="px-2 py-3 text-right tabular-nums text-gray-600"
           title={
-            a.hiddenSubtracted
+            a.filterAttributed
+              ? `Pageviews from ${activeSourceFilter}: ${a.currentPageviews.toLocaleString()} of ${a.rawPageviews.toLocaleString()} total`
+              : a.hiddenSubtracted
               ? `Original: ${a.rawPageviews.toLocaleString()}`
               : undefined
           }
         >
           {a.currentPageviews.toLocaleString()}
-          {a.hiddenSubtracted && a.hiddenSubtracted.pageviews > 0 && (
+          {a.filterAttributed && (
             <span
-              className="ml-1 text-[10px] font-normal text-amber-600"
+              className="ml-1 text-[10px] font-normal text-blue-600"
               aria-hidden
             >
-              *
+              ⌖
             </span>
           )}
+          {!a.filterAttributed &&
+            a.hiddenSubtracted &&
+            a.hiddenSubtracted.pageviews > 0 && (
+              <span
+                className="ml-1 text-[10px] font-normal text-amber-600"
+                aria-hidden
+              >
+                *
+              </span>
+            )}
         </td>
         <td
           className="px-2 py-3 text-right tabular-nums text-gray-600"
