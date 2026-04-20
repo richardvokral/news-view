@@ -1,9 +1,11 @@
 // Google Trends fetcher via scrape.do.
 //
-// scrape.do exposes Google's daily-trends JSON behind their proxy. The
-// upstream Google endpoint returns a quirky payload prefixed with `)]}',`
-// before valid JSON. We strip that prefix, parse, and pull the trending
-// search titles + traffic estimate per locale.
+// Google deprecated the legacy /trends/api/dailytrends JSON endpoint (it now
+// returns 404), so we use their current public RSS trending feed
+// (`https://trends.google.com/trending/rss?geo=XX`) and route it through
+// scrape.do to bypass the region/consent checks. We parse the Google-
+// specific `ht:` namespaced tags to extract approximate traffic and the
+// first related news item per trend.
 
 import { getDb, hasDb } from "@/lib/db";
 
@@ -13,6 +15,7 @@ export interface TrendItem {
   url: string | null;
   newsTitle?: string | null;
   newsUrl?: string | null;
+  newsSource?: string | null;
 }
 
 export interface TrendsSnapshot {
@@ -26,49 +29,62 @@ export interface TrendsSnapshot {
 const SCRAPE_DO_BASE = "https://api.scrape.do";
 
 function buildTrendsUrl(locale: string): string {
-  // Google's daily-trends payload — categorised by geo (CZ / DE / US ...).
-  return `https://trends.google.com/trends/api/dailytrends?hl=en-US&tz=0&geo=${encodeURIComponent(
+  return `https://trends.google.com/trending/rss?geo=${encodeURIComponent(
     locale
-  )}&ns=15`;
+  )}`;
 }
 
-interface RawSummary {
-  title?: { query?: string };
-  formattedTraffic?: string;
-  shareUrl?: string;
-  articles?: Array<{ title?: string; url?: string }>;
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, c) => String.fromCharCode(Number(c)));
 }
 
-interface RawDay {
-  trendingSearches?: RawSummary[];
+function extractTag(block: string, tag: string): string | null {
+  // Escape the `:` in namespaced tag names like `ht:approx_traffic`.
+  const esc = tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(
+    `<${esc}(?:\\s[^>]*)?>([\\s\\S]*?)</${esc}>`,
+    "i"
+  );
+  const m = block.match(re);
+  if (!m) return null;
+  let v = m[1].trim();
+  const cdata = v.match(/^<!\[CDATA\[([\s\S]*?)\]\]>$/);
+  if (cdata) v = cdata[1].trim();
+  return decodeEntities(v);
 }
 
-interface RawPayload {
-  default?: { trendingSearchesDays?: RawDay[] };
-}
-
-function parseGoogleTrends(text: string): TrendItem[] {
-  const cleaned = text.replace(/^[^\[{]*/, "").trim();
-  let parsed: RawPayload;
-  try {
-    parsed = JSON.parse(cleaned) as RawPayload;
-  } catch {
-    return [];
-  }
+export function parseTrendsRss(xml: string): TrendItem[] {
   const items: TrendItem[] = [];
-  const days = parsed.default?.trendingSearchesDays ?? [];
-  for (const day of days) {
-    for (const t of day.trendingSearches ?? []) {
-      const title = t.title?.query?.trim();
-      if (!title) continue;
-      items.push({
-        title,
-        traffic: t.formattedTraffic ?? null,
-        url: t.shareUrl ?? null,
-        newsTitle: t.articles?.[0]?.title ?? null,
-        newsUrl: t.articles?.[0]?.url ?? null,
-      });
-    }
+  const blocks = xml.match(/<item\b[\s\S]*?<\/item>/gi) ?? [];
+  for (const block of blocks) {
+    const title = extractTag(block, "title");
+    if (!title) continue;
+    const traffic = extractTag(block, "ht:approx_traffic");
+    const link = extractTag(block, "link");
+    const firstNews = block.match(
+      /<ht:news_item\b[\s\S]*?<\/ht:news_item>/i
+    );
+    const newsBlock = firstNews?.[0];
+    const newsTitle = newsBlock ? extractTag(newsBlock, "ht:news_item_title") : null;
+    const newsUrl = newsBlock ? extractTag(newsBlock, "ht:news_item_url") : null;
+    const newsSource = newsBlock
+      ? extractTag(newsBlock, "ht:news_item_source")
+      : null;
+    items.push({
+      title,
+      traffic: traffic ?? null,
+      url: link ?? null,
+      newsTitle: newsTitle ?? null,
+      newsUrl: newsUrl ?? null,
+      newsSource: newsSource ?? null,
+    });
   }
   return items;
 }
@@ -107,13 +123,18 @@ export async function fetchGoogleTrends(
       };
     }
     const text = await res.text();
-    const data = parseGoogleTrends(text);
+    const data = parseTrendsRss(text);
     return {
       locale,
       fetchedAt,
       source: "scrape.do",
       data,
-      error: data.length === 0 ? "Empty response" : null,
+      error:
+        data.length === 0
+          ? text.includes("<item")
+            ? "Parsed 0 items"
+            : "Upstream returned non-RSS body"
+          : null,
     };
   } catch (e) {
     return {

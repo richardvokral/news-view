@@ -40,7 +40,7 @@ function fmtRel(iso: string): string {
 }
 
 export default function GoogleTrendsSidebar() {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const [data, setData] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
