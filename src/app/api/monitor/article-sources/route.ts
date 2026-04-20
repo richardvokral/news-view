@@ -86,6 +86,13 @@ export async function GET(request: NextRequest) {
         if (sources.length > 0) {
           let timeseries: TimeseriesPoint[] | undefined;
           let topSources: string[] | undefined;
+          let timeseriesStatus:
+            | "ok"
+            | "disabled"
+            | "not_enough_points"
+            | "error"
+            | "empty" = "disabled";
+          let timeseriesPoints = 0;
           if (cfg.sourceTimeseriesEnabled) {
             topSources = sources.slice(0, 5).map((s) => s.source);
             try {
@@ -97,12 +104,20 @@ export async function GET(request: NextRequest) {
                 (r) => !isExcluded(r.source, excluded)
               );
               timeseries = buildTimeseries(filtered, topSources);
+              timeseriesPoints = timeseries.length;
+              timeseriesStatus =
+                timeseries.length === 0
+                  ? "empty"
+                  : timeseries.length < 2
+                  ? "not_enough_points"
+                  : "ok";
             } catch (tsErr) {
               console.error(
                 "article source timeseries fetch failed:",
                 tsErr
               );
               timeseries = [];
+              timeseriesStatus = "error";
             }
           }
           return NextResponse.json({
@@ -111,6 +126,12 @@ export async function GET(request: NextRequest) {
             sources,
             topSources,
             timeseries,
+            timeseriesMeta: {
+              status: timeseriesStatus,
+              points: timeseriesPoints,
+              samplingEnabled: cfg.sourceSamplingEnabled,
+              timeseriesEnabled: cfg.sourceTimeseriesEnabled,
+            },
           });
         }
       } catch (dbErr) {
@@ -144,7 +165,17 @@ export async function GET(request: NextRequest) {
         .filter((s) => !isExcluded(s.source, excluded))
         .sort((a, b) => b.visitors - a.visitors)
         .slice(0, 10);
-      const body = { pagePath, source: "plausible", sources };
+      const body = {
+        pagePath,
+        source: "plausible",
+        sources,
+        timeseriesMeta: {
+          status: "no_stored_data" as const,
+          points: 0,
+          samplingEnabled: cfg.sourceSamplingEnabled,
+          timeseriesEnabled: cfg.sourceTimeseriesEnabled,
+        },
+      };
       try {
         await redis.set(key, JSON.stringify(body), "EX", CACHE_TTL_SECONDS);
       } catch {

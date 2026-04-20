@@ -72,6 +72,8 @@ export async function PUT(request: NextRequest) {
     }
     if (typeof body.authorSamplingEnabled === "boolean")
       clean.authorSamplingEnabled = body.authorSamplingEnabled;
+    if (typeof body.topSourcesLimit === "number")
+      clean.topSourcesLimit = body.topSourcesLimit;
     await saveMonitorConfig(gate.email, clean);
     const updated = await getMonitorConfig();
     return NextResponse.json({ config: updated });

@@ -35,6 +35,7 @@ interface Article {
   title: string | null;
   imageUrl: string | null;
   titleUpdatedAt: string | null;
+  titleChanged: boolean;
   hasStoredSources: boolean;
   topAuthors: { name: string; visitors: number }[];
 }
@@ -206,6 +207,13 @@ export default function MonitorDashboard({
   const [sourcePagePaths, setSourcePagePaths] = useState<{
     source: string;
     pagePaths: string[];
+    meta?: {
+      plausibleCount: number;
+      dbCount: number;
+      unionCount: number;
+      plausibleError: string | null;
+      dbError: string | null;
+    };
   } | null>(null);
   const loading = articles === null && error === null;
   const sourceLoading =
@@ -365,6 +373,7 @@ export default function MonitorDashboard({
         setSourcePagePaths({
           source: sourceFilter,
           pagePaths: (d.pagePaths || []) as string[],
+          meta: d.meta,
         })
       )
       .catch((e) => {
@@ -625,6 +634,64 @@ export default function MonitorDashboard({
             onClearHidden={clearHidden}
           />
 
+          {sourceFilter &&
+            sourcePagePaths?.source === sourceFilter &&
+            (() => {
+              const meta = sourcePagePaths.meta;
+              const total = sourcePagePaths.pagePaths.length;
+              const visibleSet = new Set(
+                (articles ?? []).map((a) => a.pagePath)
+              );
+              const visibleMatches = sourcePagePaths.pagePaths.filter((p) =>
+                visibleSet.has(p)
+              ).length;
+              const hasErr = meta?.plausibleError || meta?.dbError;
+              return (
+                <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-xs text-blue-900">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span>
+                      Filtering by source{" "}
+                      <strong className="font-semibold">
+                        {sourceFilter}
+                      </strong>{" "}
+                      · Plausible returned {meta?.plausibleCount ?? total}{" "}
+                      {typeof meta?.dbCount === "number" && meta.dbCount > 0
+                        ? `+ ${meta.dbCount} stored`
+                        : ""}
+                      {" "}= {total} page{total === 1 ? "" : "s"}, of which{" "}
+                      <strong>{visibleMatches}</strong>{" "}
+                      {visibleMatches === 1 ? "is" : "are"} in the current
+                      window.
+                    </span>
+                    <button
+                      onClick={() => setSourceFilter(null)}
+                      className="font-medium text-blue-700 hover:underline"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  {hasErr && (
+                    <p className="mt-1 text-red-700">
+                      Error: {meta?.plausibleError ?? meta?.dbError}
+                    </p>
+                  )}
+                  {!hasErr && total === 0 && (
+                    <p className="mt-1 text-blue-700">
+                      No pages matched this source today. Try a longer window
+                      or pick a different source.
+                    </p>
+                  )}
+                  {!hasErr && total > 0 && visibleMatches === 0 && (
+                    <p className="mt-1 text-blue-700">
+                      The source has visits today, but none of its pages are
+                      in the current list (maybe the window is too short, or
+                      the regex pattern excludes them).
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+
           {loading ? (
             <div className="rounded-xl border border-gray-200 bg-white p-10 text-center text-sm text-gray-500">
               Loading…
@@ -801,6 +868,26 @@ function ExternalIcon() {
   );
 }
 
+function LightbulbIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-4 w-4"
+      aria-hidden="true"
+    >
+      <path d="M9 18h6" />
+      <path d="M10 22h4" />
+      <path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1V18h6v-1.2c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z" />
+    </svg>
+  );
+}
+
 function FlameIcon() {
   return (
     <svg
@@ -883,6 +970,15 @@ function ArticleRow({
                     aria-label="Source sampled"
                   >
                     <FlameIcon />
+                  </span>
+                )}
+                {a.titleChanged && (
+                  <span
+                    className="shrink-0 text-yellow-500"
+                    title="Title has been changed since we first saw this article (click row to see history)"
+                    aria-label="Title changed"
+                  >
+                    <LightbulbIcon />
                   </span>
                 )}
                 {titleSource === "rss" && (

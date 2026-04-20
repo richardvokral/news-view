@@ -130,6 +130,7 @@ CREATE TABLE IF NOT EXISTS monitor_config (
   show_article_images BOOLEAN NOT NULL DEFAULT false,
   author_short_names JSONB NOT NULL DEFAULT '{}'::jsonb,
   author_sampling_enabled BOOLEAN NOT NULL DEFAULT false,
+  top_sources_limit INTEGER NOT NULL DEFAULT 10,
   updated_by TEXT,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -145,4 +146,5 @@ ALTER TABLE monitor_config
   ADD COLUMN IF NOT EXISTS site_rss_urls JSONB NOT NULL DEFAULT '{}'::jsonb,
   ADD COLUMN IF NOT EXISTS show_article_images BOOLEAN NOT NULL DEFAULT false,
   ADD COLUMN IF NOT EXISTS author_short_names JSONB NOT NULL DEFAULT '{}'::jsonb,
-  ADD COLUMN IF NOT EXISTS author_sampling_enabled BOOLEAN NOT NULL DEFAULT false;
+  ADD COLUMN IF NOT EXISTS author_sampling_enabled BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS top_sources_limit INTEGER NOT NULL DEFAULT 10;

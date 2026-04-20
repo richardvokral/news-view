@@ -26,6 +26,18 @@ interface SourcesPayload {
   sources: SourceRow[];
   topSources?: string[];
   timeseries?: TimeseriesPoint[];
+  timeseriesMeta?: {
+    status:
+      | "ok"
+      | "disabled"
+      | "not_enough_points"
+      | "error"
+      | "empty"
+      | "no_stored_data";
+    points: number;
+    samplingEnabled: boolean;
+    timeseriesEnabled: boolean;
+  };
 }
 
 interface TitleHistoryEntry {
@@ -108,12 +120,21 @@ export default function ArticleRowDetails({
     history: TitleHistoryEntry[];
   }>({ deps: "", history: [] });
 
+  type ChartWindow = "full" | "1h" | "6h" | "24h";
+  const [chartWindow, setChartWindow] = useState<ChartWindow>("full");
+  const [fullSnapshots, setFullSnapshots] = useState<{
+    deps: string;
+    window: ChartWindow;
+    snapshots: Snapshot[];
+  } | null>(null);
+
   const [authors, setAuthors] = useState<{
     deps: string;
     data: AuthorsPayload | null;
   }>({ deps: "", data: null });
 
   const deps = `${siteId}|${hours}|${pagePath}`;
+  const chartDeps = `${pagePath}|${chartWindow}|${firstSeenAt}`;
 
   useEffect(() => {
     let cancelled = false;
@@ -181,6 +202,40 @@ export default function ArticleRowDetails({
     };
   }, [pagePath, siteId, hours, deps]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const params = new URLSearchParams({ path: pagePath, limit: "1000" });
+    if (chartWindow === "full") {
+      params.set("since", firstSeenAt);
+    } else {
+      params.set(
+        "hours",
+        chartWindow === "1h" ? "1" : chartWindow === "6h" ? "6" : "24"
+      );
+    }
+    fetch(`/api/monitor/article-snapshots?${params.toString()}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(`HTTP ${r.status}`)))
+      .then((d) => {
+        if (cancelled) return;
+        setFullSnapshots({
+          deps: chartDeps,
+          window: chartWindow,
+          snapshots: (d.snapshots ?? []) as Snapshot[],
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setFullSnapshots({
+          deps: chartDeps,
+          window: chartWindow,
+          snapshots: [],
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pagePath, chartWindow, firstSeenAt, chartDeps]);
+
   const currentDeps = state.deps === deps ? state : null;
   const data = currentDeps?.data ?? null;
   const error = currentDeps?.error ?? null;
@@ -224,8 +279,37 @@ export default function ArticleRowDetails({
             />
           </div>
         )}
+        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+          <span className="uppercase text-gray-400">Chart range:</span>
+          {([
+            { value: "full", label: "Full article life" },
+            { value: "24h", label: "Last 24h" },
+            { value: "6h", label: "Last 6h" },
+            { value: "1h", label: "Last 1h" },
+          ] as const).map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => setChartWindow(o.value)}
+              className={`rounded border px-2 py-0.5 transition ${
+                chartWindow === o.value
+                  ? "border-blue-500 bg-blue-50 font-medium text-blue-700"
+                  : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+              }`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
         <div className="rounded-lg border border-gray-200 bg-white p-3">
-          <ArticleSparkline snapshots={snapshots} size="lg" />
+          <ArticleSparkline
+            snapshots={
+              fullSnapshots && fullSnapshots.deps === chartDeps
+                ? fullSnapshots.snapshots
+                : snapshots
+            }
+            size="lg"
+          />
         </div>
         <dl className="mt-3 grid grid-cols-2 gap-3 text-xs text-gray-600 sm:grid-cols-5">
           <div>
@@ -334,10 +418,26 @@ export default function ArticleRowDetails({
                   Loading…
                 </div>
               ) : (
-                <ArticleSourceTimeseriesChart
-                  points={data?.timeseries ?? []}
-                  topSources={data?.topSources ?? []}
-                />
+                <>
+                  <ArticleSourceTimeseriesChart
+                    points={data?.timeseries ?? []}
+                    topSources={data?.topSources ?? []}
+                  />
+                  {data?.timeseriesMeta && data.timeseriesMeta.status !== "ok" && (
+                    <p className="mt-2 text-[11px] text-gray-500">
+                      {data.timeseriesMeta.status === "no_stored_data" &&
+                        "No stored source snapshots yet for this article — it's not in the currently sampled top-N, so only the live Plausible source list is available."}
+                      {data.timeseriesMeta.status === "disabled" &&
+                        "Timeseries display is disabled in /admin/monitor."}
+                      {data.timeseriesMeta.status === "not_enough_points" &&
+                        `Only ${data.timeseriesMeta.points} tick recorded so far — chart needs ≥2. Comes back after the next cron tick.`}
+                      {data.timeseriesMeta.status === "empty" &&
+                        "Top sources have no per-tick history yet for this window."}
+                      {data.timeseriesMeta.status === "error" &&
+                        "Error loading source timeseries; check server logs."}
+                    </p>
+                  )}
+                </>
               )}
             </div>
           </div>

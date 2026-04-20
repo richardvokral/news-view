@@ -146,6 +146,7 @@ export interface MonitorConfig {
   showArticleImages: boolean;
   authorShortNames: Record<string, string>;
   authorSamplingEnabled: boolean;
+  topSourcesLimit: number;
   updatedBy: string | null;
   updatedAt: string | null;
 }
@@ -167,6 +168,7 @@ export const DEFAULT_MONITOR_CONFIG: MonitorConfig = {
   showArticleImages: false,
   authorShortNames: {},
   authorSamplingEnabled: false,
+  topSourcesLimit: 10,
   updatedBy: null,
   updatedAt: null,
 };

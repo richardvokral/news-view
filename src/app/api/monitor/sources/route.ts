@@ -71,6 +71,7 @@ export async function GET(request: NextRequest) {
     const key = `monitor:sources:${site}:${hours}:${source}`;
     const data = await cachedJSON(key, async () => {
       const plausiblePaths: string[] = [];
+      let plausibleError: string | null = null;
       try {
         const res = (await getBreakdown(site, {
           property: "event:page",
@@ -85,13 +86,16 @@ export async function GET(request: NextRequest) {
           if (p) plausiblePaths.push(p);
         }
       } catch (e) {
+        plausibleError = e instanceof Error ? e.message : String(e);
         console.error("sources plausible filter failed:", e);
       }
 
       let dbPaths: string[] = [];
+      let dbError: string | null = null;
       try {
         dbPaths = await listPagePathsBySource(site, source, hours);
       } catch (e) {
+        dbError = e instanceof Error ? e.message : String(e);
         console.error("sources DB filter failed:", e);
       }
 
@@ -99,9 +103,13 @@ export async function GET(request: NextRequest) {
       return {
         source,
         pagePaths,
-        sources: {
-          plausible: plausiblePaths.length,
-          stored: dbPaths.length,
+        meta: {
+          plausibleCount: plausiblePaths.length,
+          dbCount: dbPaths.length,
+          unionCount: pagePaths.length,
+          plausibleError,
+          dbError,
+          fetchedAt: new Date().toISOString(),
         },
       };
     });
@@ -120,7 +128,7 @@ export async function GET(request: NextRequest) {
           metrics: "visitors",
           period: "day",
           date: today,
-          limit: 30,
+          limit: Math.max(50, cfg.topSourcesLimit + 20),
         })) as { results?: PlausibleSourceRow[] };
         rawRows = res.results || [];
       } catch (e) {
@@ -136,7 +144,7 @@ export async function GET(request: NextRequest) {
       );
       const sources = afterExclude
         .sort((a, b) => b.visitors - a.visitors)
-        .slice(0, 20);
+        .slice(0, cfg.topSourcesLimit);
       return {
         sources,
         meta: {

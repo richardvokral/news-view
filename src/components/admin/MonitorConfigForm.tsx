@@ -190,6 +190,13 @@ export default function MonitorConfigForm({ initial, sites }: Props) {
           onChange={(v) => setField("trendWindowMinutes", v)}
           min={5}
         />
+        <NumberField
+          label="Top sources shown"
+          hint="How many rows to render in the Top sources widget on /monitor (after admin exclusions)."
+          value={config.topSourcesLimit}
+          onChange={(v) => setField("topSourcesLimit", v)}
+          min={3}
+        />
       </div>
 
       <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-4">

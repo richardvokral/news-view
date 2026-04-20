@@ -82,7 +82,7 @@ export default function TopSourcesWidget({
   const list = sources ?? [];
   const visible = list.filter((s) => !matchesHidden(s.source, hiddenSources));
   const max = visible[0]?.visitors || 1;
-  const shown = visible.slice(0, 10);
+  const shown = visible;
 
   return (
     <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">

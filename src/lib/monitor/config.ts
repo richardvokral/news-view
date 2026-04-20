@@ -18,6 +18,7 @@ interface DbRow {
   show_article_images: boolean | null;
   author_short_names: Record<string, string> | null;
   author_sampling_enabled: boolean | null;
+  top_sources_limit: number | null;
   updated_by: string | null;
   updated_at: string | Date | null;
 }
@@ -66,6 +67,8 @@ function rowToConfig(r: DbRow): MonitorConfig {
     authorShortNames: normalizeStringMap(r.author_short_names),
     authorSamplingEnabled:
       r.author_sampling_enabled ?? DEFAULT_MONITOR_CONFIG.authorSamplingEnabled,
+    topSourcesLimit:
+      r.top_sources_limit ?? DEFAULT_MONITOR_CONFIG.topSourcesLimit,
     updatedBy: r.updated_by,
     updatedAt: r.updated_at
       ? new Date(r.updated_at as string).toISOString()
@@ -81,7 +84,7 @@ export async function getMonitorConfig(): Promise<MonitorConfig> {
             source_sampling_enabled, source_sampling_top_n, trend_window_minutes,
             source_timeseries_enabled, excluded_sources,
             rss_enabled, site_rss_urls, show_article_images, author_short_names,
-            author_sampling_enabled,
+            author_sampling_enabled, top_sources_limit,
             updated_by, updated_at
        FROM monitor_config WHERE id = 1`
   );
@@ -135,6 +138,10 @@ export async function saveMonitorConfig(
       : current.authorShortNames,
     authorSamplingEnabled:
       cfg.authorSamplingEnabled ?? current.authorSamplingEnabled,
+    topSourcesLimit: Math.max(
+      3,
+      Math.min(50, cfg.topSourcesLimit ?? current.topSourcesLimit)
+    ),
   };
   await getDb().query(
     `INSERT INTO monitor_config (id, enabled, interval_seconds, window_hours,
@@ -145,10 +152,10 @@ export async function saveMonitorConfig(
                                  source_timeseries_enabled, excluded_sources,
                                  rss_enabled, site_rss_urls,
                                  show_article_images, author_short_names,
-                                 author_sampling_enabled,
+                                 author_sampling_enabled, top_sources_limit,
                                  updated_by)
      VALUES (1, $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11::jsonb,
-             $12, $13::jsonb, $14, $15::jsonb, $16, $17)
+             $12, $13::jsonb, $14, $15::jsonb, $16, $17, $18)
      ON CONFLICT (id) DO UPDATE SET
        enabled = EXCLUDED.enabled,
        interval_seconds = EXCLUDED.interval_seconds,
@@ -166,6 +173,7 @@ export async function saveMonitorConfig(
        show_article_images = EXCLUDED.show_article_images,
        author_short_names = EXCLUDED.author_short_names,
        author_sampling_enabled = EXCLUDED.author_sampling_enabled,
+       top_sources_limit = EXCLUDED.top_sources_limit,
        updated_by = EXCLUDED.updated_by,
        updated_at = NOW()`,
     [
@@ -185,6 +193,7 @@ export async function saveMonitorConfig(
       next.showArticleImages,
       JSON.stringify(next.authorShortNames),
       next.authorSamplingEnabled,
+      next.topSourcesLimit,
       email,
     ]
   );

@@ -25,6 +25,7 @@ export interface ArticleWithStats {
   title: string | null;
   imageUrl: string | null;
   titleUpdatedAt: string | null;
+  titleChanged: boolean;
   hasStoredSources: boolean;
   topAuthors: { name: string; visitors: number }[];
 }
@@ -209,6 +210,7 @@ export async function listArticlesWithRecentStats(
     image_url: string | null;
     title_updated_at: string | null;
     has_stored_sources: boolean | null;
+    title_changed: boolean | null;
   }>(
     `SELECT m.page_path, m.site_id, m.first_seen_at, m.last_checked_at,
             t.title, t.image_url, t.captured_at AS title_updated_at,
@@ -217,7 +219,12 @@ export async function listArticlesWithRecentStats(
                 FROM article_source_snapshots s
                WHERE s.page_path = m.page_path
                LIMIT 1
-            ) AS has_stored_sources
+            ) AS has_stored_sources,
+            (
+              SELECT COUNT(*) > 1
+                FROM article_titles at
+               WHERE at.page_path = m.page_path
+            ) AS title_changed
        FROM article_monitors m
        LEFT JOIN LATERAL (
          SELECT title, image_url, captured_at
@@ -310,6 +317,7 @@ export async function listArticlesWithRecentStats(
       title: a.title,
       imageUrl: a.image_url,
       titleUpdatedAt: a.title_updated_at,
+      titleChanged: a.title_changed === true,
       hasStoredSources: a.has_stored_sources === true,
       topAuthors: authorsByPath.get(a.page_path) ?? [],
     };
