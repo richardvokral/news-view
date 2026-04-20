@@ -152,6 +152,8 @@ export interface MonitorConfig {
   coverageEnabled: boolean;
   coverageWindowHours: number;
   coverageModel: string;
+  googleTrendsEnabled: boolean;
+  googleTrendsLocales: string[];
   updatedBy: string | null;
   updatedAt: string | null;
 }
@@ -179,6 +181,8 @@ export const DEFAULT_MONITOR_CONFIG: MonitorConfig = {
   coverageEnabled: false,
   coverageWindowHours: 24,
   coverageModel: "claude-haiku-4-5-20251001",
+  googleTrendsEnabled: false,
+  googleTrendsLocales: ["CZ", "DE", "US"],
   updatedBy: null,
   updatedAt: null,
 };

@@ -37,6 +37,7 @@ export default async function MonitorPage({ searchParams }: PageProps) {
       enabled={cfg.enabled}
       isAdmin={session.isAdmin}
       coverageAvailable={cfg.externalRssEnabled || cfg.coverageEnabled}
+      googleTrendsEnabled={cfg.googleTrendsEnabled}
     />
   );
 }

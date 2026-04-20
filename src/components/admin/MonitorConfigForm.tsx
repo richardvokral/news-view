@@ -574,6 +574,66 @@ export default function MonitorConfigForm({ initial, sites }: Props) {
         </div>
       </div>
 
+      <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-4">
+        <div className="flex items-start gap-3">
+          <button
+            type="button"
+            onClick={() =>
+              setField("googleTrendsEnabled", !config.googleTrendsEnabled)
+            }
+            className={`relative h-6 w-11 flex-shrink-0 rounded-full transition-colors ${
+              config.googleTrendsEnabled ? "bg-blue-600" : "bg-gray-300"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                config.googleTrendsEnabled ? "left-5" : "left-0.5"
+              }`}
+            />
+          </button>
+          <div>
+            <p className="text-sm font-medium text-gray-900">
+              Google Trends sidebar
+            </p>
+            <p className="text-xs text-gray-500">
+              Adds a side toolbar on every Monitor page with Google&rsquo;s
+              daily trending searches per locale, fetched via scrape.do (set{" "}
+              <code className="rounded bg-gray-100 px-1 text-[11px]">
+                SCRAPE_DO_TOKEN
+              </code>{" "}
+              in the Vercel environment). Up to 3 locales (ISO country codes,
+              comma-separated). Each refresh consumes one scrape.do call per
+              locale; results are cached in the database between refreshes.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-3 max-w-md">
+          <label className="mb-1 block text-xs font-medium uppercase text-gray-500">
+            Locales (max 3, ISO country codes)
+          </label>
+          <input
+            type="text"
+            value={config.googleTrendsLocales.join(",")}
+            onChange={(e) =>
+              setField(
+                "googleTrendsLocales",
+                e.target.value
+                  .split(",")
+                  .map((s) => s.trim().toUpperCase())
+                  .filter((s) => s.length > 0)
+                  .slice(0, 3)
+              )
+            }
+            placeholder="CZ,DE,US"
+            className="w-full rounded-md border border-gray-300 px-3 py-1.5 font-mono text-xs uppercase focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+          <span className="mt-1 block text-xs text-gray-500">
+            Locales are tabs in the sidebar (first one is shown by default).
+          </span>
+        </div>
+      </div>
+
       {config.updatedAt && (
         <p className="text-xs text-gray-400">
           Last updated by {config.updatedBy || "unknown"} at{" "}

@@ -96,6 +96,22 @@ CREATE TABLE IF NOT EXISTS article_author_snapshots (
 CREATE INDEX IF NOT EXISTS article_author_snapshots_page_idx
   ON article_author_snapshots(page_path, captured_at DESC);
 
+-- Cached Google Trends results (one row per (locale, fetched_at) — newest
+-- per locale is what the sidebar reads). The shape of `data` is whatever
+-- the upstream scrape.do trending API returns; we store the parsed list of
+-- top trending searches as JSONB.
+CREATE TABLE IF NOT EXISTS google_trends_snapshots (
+  id BIGSERIAL PRIMARY KEY,
+  locale TEXT NOT NULL,
+  fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  source TEXT,
+  data JSONB NOT NULL DEFAULT '[]'::jsonb,
+  error TEXT
+);
+
+CREATE INDEX IF NOT EXISTS google_trends_locale_idx
+  ON google_trends_snapshots(locale, fetched_at DESC);
+
 -- Articles pulled from external (competitor) RSS feeds for the coverage
 -- comparison view. One row per unique (feed_source, guid).
 CREATE TABLE IF NOT EXISTS external_articles (
@@ -178,6 +194,8 @@ CREATE TABLE IF NOT EXISTS monitor_config (
   coverage_enabled BOOLEAN NOT NULL DEFAULT false,
   coverage_window_hours INTEGER NOT NULL DEFAULT 24,
   coverage_model TEXT NOT NULL DEFAULT 'claude-haiku-4-5-20251001',
+  google_trends_enabled BOOLEAN NOT NULL DEFAULT false,
+  google_trends_locales JSONB NOT NULL DEFAULT '["CZ","DE","US"]'::jsonb,
   updated_by TEXT,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -199,4 +217,6 @@ ALTER TABLE monitor_config
   ADD COLUMN IF NOT EXISTS external_rss_urls JSONB NOT NULL DEFAULT '[]'::jsonb,
   ADD COLUMN IF NOT EXISTS coverage_enabled BOOLEAN NOT NULL DEFAULT false,
   ADD COLUMN IF NOT EXISTS coverage_window_hours INTEGER NOT NULL DEFAULT 24,
-  ADD COLUMN IF NOT EXISTS coverage_model TEXT NOT NULL DEFAULT 'claude-haiku-4-5-20251001';
+  ADD COLUMN IF NOT EXISTS coverage_model TEXT NOT NULL DEFAULT 'claude-haiku-4-5-20251001',
+  ADD COLUMN IF NOT EXISTS google_trends_enabled BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS google_trends_locales JSONB NOT NULL DEFAULT '["CZ","DE","US"]'::jsonb;

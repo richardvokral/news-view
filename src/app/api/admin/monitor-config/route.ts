@@ -88,6 +88,15 @@ export async function PUT(request: NextRequest) {
       clean.coverageWindowHours = body.coverageWindowHours;
     if (typeof body.coverageModel === "string")
       clean.coverageModel = body.coverageModel;
+    if (typeof body.googleTrendsEnabled === "boolean")
+      clean.googleTrendsEnabled = body.googleTrendsEnabled;
+    if (Array.isArray(body.googleTrendsLocales)) {
+      clean.googleTrendsLocales = body.googleTrendsLocales
+        .filter((v): v is string => typeof v === "string")
+        .map((v) => v.trim().toUpperCase())
+        .filter((v) => v.length > 0)
+        .slice(0, 3);
+    }
     await saveMonitorConfig(gate.email, clean);
     const updated = await getMonitorConfig();
     return NextResponse.json({ config: updated });

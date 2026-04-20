@@ -24,6 +24,8 @@ interface DbRow {
   coverage_enabled: boolean | null;
   coverage_window_hours: number | null;
   coverage_model: string | null;
+  google_trends_enabled: boolean | null;
+  google_trends_locales: string[] | null;
   updated_by: string | null;
   updated_at: string | Date | null;
 }
@@ -85,6 +87,14 @@ function rowToConfig(r: DbRow): MonitorConfig {
       r.coverage_window_hours ?? DEFAULT_MONITOR_CONFIG.coverageWindowHours,
     coverageModel:
       r.coverage_model ?? DEFAULT_MONITOR_CONFIG.coverageModel,
+    googleTrendsEnabled:
+      r.google_trends_enabled ?? DEFAULT_MONITOR_CONFIG.googleTrendsEnabled,
+    googleTrendsLocales: Array.isArray(r.google_trends_locales)
+      ? r.google_trends_locales
+          .map((s) => String(s).trim().toUpperCase())
+          .filter(Boolean)
+          .slice(0, 3)
+      : DEFAULT_MONITOR_CONFIG.googleTrendsLocales,
     updatedBy: r.updated_by,
     updatedAt: r.updated_at
       ? new Date(r.updated_at as string).toISOString()
@@ -103,6 +113,7 @@ export async function getMonitorConfig(): Promise<MonitorConfig> {
             author_sampling_enabled, top_sources_limit,
             external_rss_enabled, external_rss_urls,
             coverage_enabled, coverage_window_hours, coverage_model,
+            google_trends_enabled, google_trends_locales,
             updated_by, updated_at
        FROM monitor_config WHERE id = 1`
   );
@@ -176,6 +187,17 @@ export async function saveMonitorConfig(
     coverageModel:
       (cfg.coverageModel ?? current.coverageModel)?.trim() ||
       current.coverageModel,
+    googleTrendsEnabled:
+      cfg.googleTrendsEnabled ?? current.googleTrendsEnabled,
+    googleTrendsLocales: Array.isArray(cfg.googleTrendsLocales)
+      ? Array.from(
+          new Set(
+            cfg.googleTrendsLocales
+              .map((s) => String(s).trim().toUpperCase())
+              .filter(Boolean)
+          )
+        ).slice(0, 3)
+      : current.googleTrendsLocales,
   };
   await getDb().query(
     `INSERT INTO monitor_config (id, enabled, interval_seconds, window_hours,
@@ -190,10 +212,11 @@ export async function saveMonitorConfig(
                                  external_rss_enabled, external_rss_urls,
                                  coverage_enabled, coverage_window_hours,
                                  coverage_model,
+                                 google_trends_enabled, google_trends_locales,
                                  updated_by)
      VALUES (1, $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11::jsonb,
              $12, $13::jsonb, $14, $15::jsonb, $16, $17,
-             $18, $19::jsonb, $20, $21, $22, $23)
+             $18, $19::jsonb, $20, $21, $22, $23, $24::jsonb, $25)
      ON CONFLICT (id) DO UPDATE SET
        enabled = EXCLUDED.enabled,
        interval_seconds = EXCLUDED.interval_seconds,
@@ -217,6 +240,8 @@ export async function saveMonitorConfig(
        coverage_enabled = EXCLUDED.coverage_enabled,
        coverage_window_hours = EXCLUDED.coverage_window_hours,
        coverage_model = EXCLUDED.coverage_model,
+       google_trends_enabled = EXCLUDED.google_trends_enabled,
+       google_trends_locales = EXCLUDED.google_trends_locales,
        updated_by = EXCLUDED.updated_by,
        updated_at = NOW()`,
     [
@@ -242,6 +267,8 @@ export async function saveMonitorConfig(
       next.coverageEnabled,
       next.coverageWindowHours,
       next.coverageModel,
+      next.googleTrendsEnabled,
+      JSON.stringify(next.googleTrendsLocales),
       email,
     ]
   );

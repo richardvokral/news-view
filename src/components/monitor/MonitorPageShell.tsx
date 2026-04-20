@@ -4,6 +4,7 @@ import { useCallback } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import MonitorDashboard from "./MonitorDashboard";
 import CoverageTab from "./CoverageTab";
+import GoogleTrendsSidebar from "./GoogleTrendsSidebar";
 
 interface Props {
   sites: string[];
@@ -17,6 +18,7 @@ interface Props {
   enabled: boolean;
   isAdmin: boolean;
   coverageAvailable: boolean;
+  googleTrendsEnabled: boolean;
 }
 
 type Tab = "monitor" | "coverage";
@@ -74,6 +76,8 @@ export default function MonitorPageShell(props: Props) {
           isAdmin={props.isAdmin}
         />
       )}
+
+      {props.googleTrendsEnabled && <GoogleTrendsSidebar />}
     </div>
   );
 }
