@@ -188,6 +188,61 @@ export default function MonitorConfigForm({ initial, sites }: Props) {
             min={1}
           />
         </div>
+        <div className="mt-4 flex items-start gap-3 border-t border-gray-200 pt-3">
+          <button
+            type="button"
+            onClick={() =>
+              setField(
+                "sourceTimeseriesEnabled",
+                !config.sourceTimeseriesEnabled
+              )
+            }
+            className={`relative h-6 w-11 flex-shrink-0 rounded-full transition-colors ${
+              config.sourceTimeseriesEnabled ? "bg-blue-600" : "bg-gray-300"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                config.sourceTimeseriesEnabled ? "left-5" : "left-0.5"
+              }`}
+            />
+          </button>
+          <div>
+            <p className="text-sm font-medium text-gray-900">
+              Show source-over-time chart in article detail
+            </p>
+            <p className="text-xs text-gray-500">
+              Only meaningful with source sampling enabled above — the chart
+              uses stored per-tick snapshots of the top 5 sources per article.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h3 className="mb-1 text-sm font-medium text-gray-900">
+          Excluded sources
+        </h3>
+        <p className="mb-2 text-xs text-gray-500">
+          Sources matching any of these (case-insensitive substring) are hidden
+          from Top sources on /monitor and from the per-article sources panel.
+          Typical use: hide internal referrers. One per line.
+        </p>
+        <textarea
+          value={config.excludedSources.join("\n")}
+          onChange={(e) =>
+            setField(
+              "excludedSources",
+              e.target.value
+                .split("\n")
+                .map((s) => s.trim())
+                .filter((s) => s.length > 0)
+            )
+          }
+          placeholder={"seznam.cz\nwww.seznam.cz"}
+          rows={3}
+          className="w-full rounded-md border border-gray-300 px-3 py-1.5 font-mono text-xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        />
       </div>
 
       <div>

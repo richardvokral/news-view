@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import ArticleSparkline from "./ArticleSparkline";
+import ArticleSourceTimeseriesChart from "./ArticleSourceTimeseriesChart";
 
 interface Snapshot {
   capturedAt: string;
@@ -14,10 +15,17 @@ interface SourceRow {
   visitors: number;
 }
 
+interface TimeseriesPoint {
+  capturedAt: string;
+  values: Record<string, number>;
+}
+
 interface SourcesPayload {
   pagePath: string;
   source: "db" | "plausible" | "error";
   sources: SourceRow[];
+  topSources?: string[];
+  timeseries?: TimeseriesPoint[];
 }
 
 interface Props {
@@ -31,6 +39,8 @@ interface Props {
   currentVisitors: number;
   currentPageviews: number;
   trendLabel: string;
+  firstHourGrowth: number | null;
+  sourceTimeseriesEnabled: boolean;
 }
 
 export default function ArticleRowDetails({
@@ -44,6 +54,8 @@ export default function ArticleRowDetails({
   currentVisitors,
   currentPageviews,
   trendLabel,
+  firstHourGrowth,
+  sourceTimeseriesEnabled,
 }: Props) {
   const [state, setState] = useState<{
     deps: string;
@@ -102,7 +114,7 @@ export default function ArticleRowDetails({
         <div className="rounded-lg border border-gray-200 bg-white p-3">
           <ArticleSparkline snapshots={snapshots} size="lg" />
         </div>
-        <dl className="mt-3 grid grid-cols-2 gap-3 text-xs text-gray-600 sm:grid-cols-4">
+        <dl className="mt-3 grid grid-cols-2 gap-3 text-xs text-gray-600 sm:grid-cols-5">
           <div>
             <dt className="text-[10px] uppercase text-gray-400">Visitors</dt>
             <dd className="font-semibold text-gray-800">
@@ -118,6 +130,19 @@ export default function ArticleRowDetails({
           <div>
             <dt className="text-[10px] uppercase text-gray-400">Trend</dt>
             <dd className="font-semibold text-gray-800">{trendLabel}</dd>
+          </div>
+          <div>
+            <dt
+              className="text-[10px] uppercase text-gray-400"
+              title="Visitors recorded one hour after the article was first detected"
+            >
+              1h visitors
+            </dt>
+            <dd className="font-semibold text-gray-800">
+              {firstHourGrowth === null
+                ? "—"
+                : firstHourGrowth.toLocaleString()}
+            </dd>
           </div>
           <div>
             <dt className="text-[10px] uppercase text-gray-400">First seen</dt>
@@ -138,6 +163,25 @@ export default function ArticleRowDetails({
           <p className="mt-1 text-[11px] text-gray-400">
             Last checked: {new Date(lastCheckedAt).toLocaleString()}
           </p>
+        )}
+        {sourceTimeseriesEnabled && (
+          <div className="mt-4">
+            <h3 className="mb-2 text-xs font-semibold uppercase text-gray-500">
+              Top sources over time
+            </h3>
+            <div className="rounded-lg border border-gray-200 bg-white p-3">
+              {loading ? (
+                <div className="flex h-40 items-center justify-center text-xs text-gray-400">
+                  Loading…
+                </div>
+              ) : (
+                <ArticleSourceTimeseriesChart
+                  points={data?.timeseries ?? []}
+                  topSources={data?.topSources ?? []}
+                />
+              )}
+            </div>
+          </div>
         )}
       </div>
       <div>

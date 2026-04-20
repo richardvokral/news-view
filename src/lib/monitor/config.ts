@@ -11,6 +11,8 @@ interface DbRow {
   source_sampling_enabled: boolean | null;
   source_sampling_top_n: number | null;
   trend_window_minutes: number | null;
+  source_timeseries_enabled: boolean | null;
+  excluded_sources: string[] | null;
   updated_by: string | null;
   updated_at: string | Date | null;
 }
@@ -29,6 +31,12 @@ function rowToConfig(r: DbRow): MonitorConfig {
       r.source_sampling_top_n ?? DEFAULT_MONITOR_CONFIG.sourceSamplingTopN,
     trendWindowMinutes:
       r.trend_window_minutes ?? DEFAULT_MONITOR_CONFIG.trendWindowMinutes,
+    sourceTimeseriesEnabled:
+      r.source_timeseries_enabled ??
+      DEFAULT_MONITOR_CONFIG.sourceTimeseriesEnabled,
+    excludedSources: Array.isArray(r.excluded_sources)
+      ? r.excluded_sources.map(String)
+      : [],
     updatedBy: r.updated_by,
     updatedAt: r.updated_at
       ? new Date(r.updated_at as string).toISOString()
@@ -42,6 +50,7 @@ export async function getMonitorConfig(): Promise<MonitorConfig> {
     `SELECT enabled, interval_seconds, window_hours, retention_days,
             max_requests_per_hour, site_patterns,
             source_sampling_enabled, source_sampling_top_n, trend_window_minutes,
+            source_timeseries_enabled, excluded_sources,
             updated_by, updated_at
        FROM monitor_config WHERE id = 1`
   );
@@ -76,6 +85,15 @@ export async function saveMonitorConfig(
       5,
       Math.min(1440, cfg.trendWindowMinutes ?? current.trendWindowMinutes)
     ),
+    sourceTimeseriesEnabled:
+      cfg.sourceTimeseriesEnabled ?? current.sourceTimeseriesEnabled,
+    excludedSources: Array.isArray(cfg.excludedSources)
+      ? Array.from(
+          new Set(
+            cfg.excludedSources.map((s) => String(s).trim()).filter(Boolean)
+          )
+        )
+      : current.excludedSources,
   };
   await getDb().query(
     `INSERT INTO monitor_config (id, enabled, interval_seconds, window_hours,
@@ -83,8 +101,9 @@ export async function saveMonitorConfig(
                                  site_patterns,
                                  source_sampling_enabled, source_sampling_top_n,
                                  trend_window_minutes,
+                                 source_timeseries_enabled, excluded_sources,
                                  updated_by)
-     VALUES (1, $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10)
+     VALUES (1, $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11::jsonb, $12)
      ON CONFLICT (id) DO UPDATE SET
        enabled = EXCLUDED.enabled,
        interval_seconds = EXCLUDED.interval_seconds,
@@ -95,6 +114,8 @@ export async function saveMonitorConfig(
        source_sampling_enabled = EXCLUDED.source_sampling_enabled,
        source_sampling_top_n = EXCLUDED.source_sampling_top_n,
        trend_window_minutes = EXCLUDED.trend_window_minutes,
+       source_timeseries_enabled = EXCLUDED.source_timeseries_enabled,
+       excluded_sources = EXCLUDED.excluded_sources,
        updated_by = EXCLUDED.updated_by,
        updated_at = NOW()`,
     [
@@ -107,6 +128,8 @@ export async function saveMonitorConfig(
       next.sourceSamplingEnabled,
       next.sourceSamplingTopN,
       next.trendWindowMinutes,
+      next.sourceTimeseriesEnabled,
+      JSON.stringify(next.excludedSources),
       email,
     ]
   );

@@ -31,6 +31,7 @@ export default async function MonitorPage({ searchParams }: PageProps) {
       siteBaseUrl={currentSite ? siteBaseUrl(currentSite) : ""}
       defaultHours={cfg.windowHours}
       trendWindowMinutes={cfg.trendWindowMinutes}
+      sourceTimeseriesEnabled={cfg.sourceTimeseriesEnabled}
       enabled={cfg.enabled}
       isAdmin={session.isAdmin}
     />

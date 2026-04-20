@@ -38,6 +38,14 @@ export async function PUT(request: NextRequest) {
       clean.sourceSamplingTopN = body.sourceSamplingTopN;
     if (typeof body.trendWindowMinutes === "number")
       clean.trendWindowMinutes = body.trendWindowMinutes;
+    if (typeof body.sourceTimeseriesEnabled === "boolean")
+      clean.sourceTimeseriesEnabled = body.sourceTimeseriesEnabled;
+    if (Array.isArray(body.excludedSources)) {
+      clean.excludedSources = body.excludedSources
+        .filter((v): v is string => typeof v === "string")
+        .map((v) => v.trim())
+        .filter((v) => v.length > 0);
+    }
     if (body.sitePatterns && typeof body.sitePatterns === "object") {
       const sp: Record<string, string> = {};
       for (const [k, v] of Object.entries(body.sitePatterns)) {

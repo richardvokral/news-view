@@ -14,6 +14,7 @@ export interface FiltersState {
   visitors: NumericFilter | null;
   pageviews: NumericFilter | null;
   trend: NumericFilter | null;
+  firstHour: NumericFilter | null;
   firstSeenWithinHours: number | null;
 }
 
@@ -22,6 +23,7 @@ export const EMPTY_FILTERS: FiltersState = {
   visitors: null,
   pageviews: null,
   trend: null,
+  firstHour: null,
   firstSeenWithinHours: null,
 };
 
@@ -107,6 +109,15 @@ export default function MonitorFilters({ filters, onChange }: Props) {
             label="pageviews"
             filter={filters.pageviews}
             onChange={(next) => onChange({ ...filters, pageviews: next })}
+          />
+        </div>
+      </td>
+      <td className="px-2 py-2 text-right">
+        <div className="flex justify-end">
+          <NumericCell
+            label="1h visits"
+            filter={filters.firstHour}
+            onChange={(next) => onChange({ ...filters, firstHour: next })}
           />
         </div>
       </td>

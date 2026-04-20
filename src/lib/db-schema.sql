@@ -94,6 +94,8 @@ CREATE TABLE IF NOT EXISTS monitor_config (
   source_sampling_enabled BOOLEAN NOT NULL DEFAULT false,
   source_sampling_top_n INTEGER NOT NULL DEFAULT 10,
   trend_window_minutes INTEGER NOT NULL DEFAULT 60,
+  source_timeseries_enabled BOOLEAN NOT NULL DEFAULT false,
+  excluded_sources JSONB NOT NULL DEFAULT '[]'::jsonb,
   updated_by TEXT,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -102,4 +104,6 @@ CREATE TABLE IF NOT EXISTS monitor_config (
 ALTER TABLE monitor_config
   ADD COLUMN IF NOT EXISTS source_sampling_enabled BOOLEAN NOT NULL DEFAULT false,
   ADD COLUMN IF NOT EXISTS source_sampling_top_n INTEGER NOT NULL DEFAULT 10,
-  ADD COLUMN IF NOT EXISTS trend_window_minutes INTEGER NOT NULL DEFAULT 60;
+  ADD COLUMN IF NOT EXISTS trend_window_minutes INTEGER NOT NULL DEFAULT 60,
+  ADD COLUMN IF NOT EXISTS source_timeseries_enabled BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS excluded_sources JSONB NOT NULL DEFAULT '[]'::jsonb;

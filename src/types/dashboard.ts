@@ -139,6 +139,8 @@ export interface MonitorConfig {
   sourceSamplingEnabled: boolean;
   sourceSamplingTopN: number;
   trendWindowMinutes: number;
+  sourceTimeseriesEnabled: boolean;
+  excludedSources: string[];
   updatedBy: string | null;
   updatedAt: string | null;
 }
@@ -153,6 +155,8 @@ export const DEFAULT_MONITOR_CONFIG: MonitorConfig = {
   sourceSamplingEnabled: false,
   sourceSamplingTopN: 10,
   trendWindowMinutes: 60,
+  sourceTimeseriesEnabled: false,
+  excludedSources: [],
   updatedBy: null,
   updatedAt: null,
 };

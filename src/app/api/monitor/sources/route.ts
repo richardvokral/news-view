@@ -35,6 +35,15 @@ async function cachedJSON<T>(
   }
 }
 
+function isExcluded(source: string, excluded: string[]): boolean {
+  if (excluded.length === 0) return false;
+  const needle = source.toLowerCase();
+  return excluded.some((e) => {
+    const pat = e.trim().toLowerCase();
+    return pat.length > 0 && needle.includes(pat);
+  });
+}
+
 export async function GET(request: NextRequest) {
   const session = await getSession();
   if (!session.email || !session.sections.includes("monitor")) {
@@ -47,7 +56,9 @@ export async function GET(request: NextRequest) {
   if (!site) {
     return NextResponse.json({ error: "Unknown site" }, { status: 400 });
   }
-  const defaultWindow = (await getMonitorConfig()).windowHours;
+  const cfg = await getMonitorConfig();
+  const defaultWindow = cfg.windowHours;
+  const excluded = cfg.excludedSources;
   const hoursParam = params.get("hours");
   const hours = hoursParam
     ? Math.min(Math.max(1, Number(hoursParam)), 168)
@@ -74,21 +85,24 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(data);
   }
 
-  const key = `monitor:sources:${site}:${hours}`;
+  const excludedKey = excluded.join("|");
+  const key = `monitor:sources:${site}:${hours}:excl:${excludedKey}`;
   const data = await cachedJSON(key, async () => {
     const res = (await getBreakdown(site, {
       property: "visit:source",
       metrics: "visitors",
       period: "day",
       date: today,
-      limit: 20,
+      limit: 30,
     })) as { results?: PlausibleSourceRow[] };
     const sources = (res.results || [])
       .map((r) => ({
         source: String(r.source),
         visitors: Number(r.visitors) || 0,
       }))
-      .sort((a, b) => b.visitors - a.visitors);
+      .filter((r) => !isExcluded(r.source, excluded))
+      .sort((a, b) => b.visitors - a.visitors)
+      .slice(0, 20);
     return { sources };
   });
   return NextResponse.json(data);

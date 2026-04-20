@@ -50,3 +50,36 @@ export function formatTrendScore(score: number): string {
   const rounded = abs >= 10 ? Math.round(score) : Math.round(score * 10) / 10;
   return `${sign}${rounded}/m`;
 }
+
+/**
+ * First-hour growth KPI: visitor count recorded roughly one hour after the
+ * article was first seen. Uses the snapshot with captured_at closest to
+ * firstSeenAt + 60min (within a ±10min tolerance); falls back to the latest
+ * snapshot within the first hour. Returns null when the article is less than
+ * an hour old or has no snapshots inside that window.
+ */
+export function computeFirstHourGrowth(
+  snapshots: TrendPoint[],
+  firstSeenAt: string,
+  now: number = Date.now()
+): number | null {
+  if (!snapshots || snapshots.length === 0) return null;
+  const firstSeenMs = new Date(firstSeenAt).getTime();
+  if (!Number.isFinite(firstSeenMs)) return null;
+  const hourMark = firstSeenMs + 60 * 60_000;
+  if (now < hourMark - 60_000) return null;
+
+  const windowStart = firstSeenMs;
+  const windowEnd = hourMark + 10 * 60_000;
+  let best: { t: number; v: number; distance: number } | null = null;
+  for (const s of snapshots) {
+    const t = new Date(s.capturedAt).getTime();
+    if (!Number.isFinite(t) || t < windowStart || t > windowEnd) continue;
+    const v = s.visitors ?? 0;
+    const distance = Math.abs(t - hourMark);
+    if (!best || distance < best.distance) {
+      best = { t, v, distance };
+    }
+  }
+  return best ? best.v : null;
+}

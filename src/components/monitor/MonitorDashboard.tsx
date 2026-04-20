@@ -12,7 +12,11 @@ import MonitorFilters, {
   type NumericOp,
 } from "./MonitorFilters";
 import SiteSelector from "@/components/reports/SiteSelector";
-import { computeTrendScore, formatTrendScore } from "@/lib/monitor/trend";
+import {
+  computeTrendScore,
+  formatTrendScore,
+  computeFirstHourGrowth,
+} from "@/lib/monitor/trend";
 
 interface Snapshot {
   capturedAt: string;
@@ -36,18 +40,25 @@ interface Props {
   siteBaseUrl: string;
   defaultHours: number;
   trendWindowMinutes: number;
+  sourceTimeseriesEnabled: boolean;
   enabled: boolean;
   isAdmin: boolean;
 }
 
-type SortKey = "article" | "visitors" | "pageviews" | "firstSeen" | "trend";
+type SortKey =
+  | "article"
+  | "visitors"
+  | "pageviews"
+  | "firstSeen"
+  | "firstHour"
+  | "trend";
 type SortDir = "asc" | "desc";
 
 const HOUR_OPTIONS = [
-  { value: 1, label: "1h" },
-  { value: 6, label: "6h" },
-  { value: 24, label: "24h" },
-  { value: 72, label: "3d" },
+  { value: 1, label: "1 hour", short: "1h" },
+  { value: 6, label: "6 hours", short: "6h" },
+  { value: 24, label: "24 hours", short: "24h" },
+  { value: 72, label: "3 days", short: "3d" },
 ];
 
 const NUMERIC_OPS: readonly NumericOp[] = [">", ">=", "<", "<="] as const;
@@ -104,6 +115,7 @@ function filtersFromParams(params: URLSearchParams): FiltersState {
     visitors: parseNumericParam(params, "fv"),
     pageviews: parseNumericParam(params, "fp"),
     trend: parseNumericParam(params, "ft"),
+    firstHour: parseNumericParam(params, "fh"),
     firstSeenWithinHours: firstSeen ? Number(firstSeen) : null,
   };
 }
@@ -115,7 +127,14 @@ function sortFromParams(params: URLSearchParams): {
   const key = (params.get("sort") as SortKey | null) ?? "visitors";
   const dir = (params.get("dir") as SortDir | null) ?? "desc";
   const validKey: SortKey = (
-    ["article", "visitors", "pageviews", "firstSeen", "trend"] as SortKey[]
+    [
+      "article",
+      "visitors",
+      "pageviews",
+      "firstSeen",
+      "firstHour",
+      "trend",
+    ] as SortKey[]
   ).includes(key)
     ? key
     : "visitors";
@@ -129,6 +148,7 @@ export default function MonitorDashboard({
   siteBaseUrl,
   defaultHours,
   trendWindowMinutes,
+  sourceTimeseriesEnabled,
   enabled,
   isAdmin,
 }: Props) {
@@ -202,6 +222,9 @@ export default function MonitorDashboard({
         const t = serializeNumeric(next.trend);
         if (t) params.set("ft", t);
         else params.delete("ft");
+        const h = serializeNumeric(next.firstHour);
+        if (h) params.set("fh", h);
+        else params.delete("fh");
         if (next.firstSeenWithinHours)
           params.set("fs", String(next.firstSeenWithinHours));
         else params.delete("fs");
@@ -295,6 +318,7 @@ export default function MonitorDashboard({
       (articles ?? []).map((a) => ({
         ...a,
         trendScore: computeTrendScore(a.snapshots, trendWindowMinutes),
+        firstHourGrowth: computeFirstHourGrowth(a.snapshots, a.firstSeenAt),
       })),
     [articles, trendWindowMinutes]
   );
@@ -315,6 +339,11 @@ export default function MonitorDashboard({
       if (!applyNumericFilter(a.currentPageviews, filters.pageviews))
         return false;
       if (!applyNumericFilter(a.trendScore, filters.trend)) return false;
+      if (filters.firstHour) {
+        const value = a.firstHourGrowth;
+        if (value === null) return false;
+        if (!applyNumericFilter(value, filters.firstHour)) return false;
+      }
       if (firstSeenCutoff !== null) {
         if (new Date(a.firstSeenAt).getTime() < firstSeenCutoff) return false;
       }
@@ -346,6 +375,11 @@ export default function MonitorDashboard({
           cmp =
             new Date(a.firstSeenAt).getTime() -
             new Date(b.firstSeenAt).getTime();
+          break;
+        case "firstHour":
+          cmp =
+            (a.firstHourGrowth ?? -Infinity) -
+            (b.firstHourGrowth ?? -Infinity);
           break;
         case "trend":
           cmp = a.trendScore - b.trendScore;
@@ -379,20 +413,36 @@ export default function MonitorDashboard({
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-4">
           <SiteSelector sites={sites} current={currentSite} />
-          <div className="flex rounded-lg border border-gray-300 bg-white p-0.5">
-            {HOUR_OPTIONS.map((o) => (
-              <button
-                key={o.value}
-                onClick={() => setHours(o.value)}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                  hours === o.value
-                    ? "bg-blue-600 text-white"
-                    : "text-gray-600 hover:bg-gray-50"
-                }`}
-              >
-                {o.label}
-              </button>
-            ))}
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+              Window
+            </span>
+            <div
+              role="radiogroup"
+              aria-label="Time window"
+              className="flex rounded-lg border border-gray-300 bg-white p-0.5"
+            >
+              {HOUR_OPTIONS.map((o) => {
+                const active = hours === o.value;
+                return (
+                  <button
+                    key={o.value}
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => setHours(o.value)}
+                    title={`Show articles first seen in the last ${o.label}`}
+                    className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                      active
+                        ? "bg-blue-600 text-white shadow-sm ring-1 ring-blue-600"
+                        : "text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    <span className="sm:hidden">{o.short}</span>
+                    <span className="hidden sm:inline">{o.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
         {!enabled && (
@@ -493,6 +543,15 @@ export default function MonitorDashboard({
                       className="px-2 py-3"
                     />
                     <SortableHeader
+                      label="1h visitors"
+                      sortKey="firstHour"
+                      active={sortKey}
+                      dir={sortDir}
+                      onSort={setSortParam}
+                      align="right"
+                      className="px-2 py-3"
+                    />
+                    <SortableHeader
                       label="First seen"
                       sortKey="firstSeen"
                       active={sortKey}
@@ -519,7 +578,7 @@ export default function MonitorDashboard({
                   {sorted.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={5}
+                        colSpan={6}
                         className="px-5 py-10 text-center text-sm text-gray-500"
                       >
                         {sourceLoading
@@ -548,6 +607,7 @@ export default function MonitorDashboard({
                           trendLabel={trendLabel}
                           hours={hours}
                           zebra={i % 2 === 0}
+                          sourceTimeseriesEnabled={sourceTimeseriesEnabled}
                         />
                       );
                     })
@@ -618,13 +678,14 @@ function ExternalIcon() {
 }
 
 interface ArticleRowProps {
-  article: Article & { trendScore: number };
+  article: Article & { trendScore: number; firstHourGrowth: number | null };
   expanded: boolean;
   onToggle: () => void;
   liveUrl: string;
   trendLabel: string;
   hours: number;
   zebra: boolean;
+  sourceTimeseriesEnabled: boolean;
 }
 
 function ArticleRow({
@@ -635,6 +696,7 @@ function ArticleRow({
   trendLabel,
   hours,
   zebra,
+  sourceTimeseriesEnabled,
 }: ArticleRowProps) {
   return (
     <>
@@ -672,6 +734,20 @@ function ArticleRow({
         <td className="px-2 py-3 text-right tabular-nums text-gray-600">
           {a.currentPageviews.toLocaleString()}
         </td>
+        <td
+          className="px-2 py-3 text-right tabular-nums text-gray-600"
+          title={
+            a.firstHourGrowth === null
+              ? "Not enough history yet (article is less than 1h old)"
+              : "Visitors one hour after first detection"
+          }
+        >
+          {a.firstHourGrowth === null ? (
+            <span className="text-gray-400">—</span>
+          ) : (
+            a.firstHourGrowth.toLocaleString()
+          )}
+        </td>
         <td className="whitespace-nowrap px-5 py-3 text-right text-xs text-gray-500">
           {relTime(a.firstSeenAt)}
         </td>
@@ -697,7 +773,7 @@ function ArticleRow({
       </tr>
       {expanded && (
         <tr className="border-t border-gray-100">
-          <td colSpan={5} className="p-0">
+          <td colSpan={6} className="p-0">
             <ArticleRowDetails
               pagePath={a.pagePath}
               siteId={a.siteId}
@@ -709,6 +785,8 @@ function ArticleRow({
               currentVisitors={a.currentVisitors}
               currentPageviews={a.currentPageviews}
               trendLabel={trendLabel}
+              firstHourGrowth={a.firstHourGrowth}
+              sourceTimeseriesEnabled={sourceTimeseriesEnabled}
             />
           </td>
         </tr>
