@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { isKnownSite, getBreakdown } from "@/lib/plausible";
+import { isKnownSite, getBreakdown, plausibleDayRange } from "@/lib/plausible";
 import { getMonitorConfig } from "@/lib/monitor/config";
 import {
   listLatestSourcesForArticle,
@@ -144,7 +144,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const today = new Date().toISOString().slice(0, 10);
     const excludedKey = excluded.join("|");
     const key = `monitor:article-sources:${site}:${hours}:${pagePath}:excl:${excludedKey}`;
     try {
@@ -156,8 +155,7 @@ export async function GET(request: NextRequest) {
       const res = (await getBreakdown(site, {
         property: "visit:source",
         metrics: "visitors",
-        period: "day",
-        date: today,
+        ...plausibleDayRange(),
         filters: `event:page==${pagePath}`,
         limit: 15,
       })) as { results?: PlausibleSourceRow[] };

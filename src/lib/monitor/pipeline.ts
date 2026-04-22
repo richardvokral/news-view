@@ -1,5 +1,5 @@
 import { getRedis } from "@/lib/redis";
-import { listSiteIds, getBreakdown } from "@/lib/plausible";
+import { listSiteIds, getBreakdown, plausibleDayRange } from "@/lib/plausible";
 import { getMonitorConfig } from "./config";
 import { fetchRssFeed, type RssItem } from "./rss";
 import {
@@ -35,8 +35,10 @@ interface TickResult {
 }
 
 /**
- * One pass over every configured site: pull today's per-page visitor/pageview
- * totals from Plausible, upsert matching article pages, snapshot their counts.
+ * One pass over every configured site: pull per-page visitor/pageview totals
+ * from Plausible over a rolling 48h (yesterday..today UTC) window — this
+ * avoids the counts snapping down to near-zero at UTC midnight — then upsert
+ * matching article pages and snapshot their counts.
  * Rate-capped via a Redis hourly counter. Idempotent.
  */
 export async function runMonitorTick(): Promise<TickResult> {
@@ -76,7 +78,7 @@ export async function runMonitorTick(): Promise<TickResult> {
   }
 
   const now = new Date();
-  const today = now.toISOString().slice(0, 10);
+  const dayRange = plausibleDayRange(now);
   const perSite: {
     siteId: string;
     articles: number;
@@ -144,8 +146,7 @@ export async function runMonitorTick(): Promise<TickResult> {
       const raw = (await getBreakdown(siteId, {
         property: "event:page",
         metrics: "visitors,pageviews",
-        period: "day",
-        date: today,
+        ...dayRange,
         limit: 100,
       })) as {
         results?: { page: string; visitors: number; pageviews: number }[];
@@ -203,8 +204,7 @@ export async function runMonitorTick(): Promise<TickResult> {
             const sr = (await getBreakdown(siteId, {
               property: "visit:source",
               metrics: "visitors",
-              period: "day",
-              date: today,
+              ...dayRange,
               filters: `event:page==${row.page}`,
               limit: 5,
             })) as {
@@ -243,8 +243,7 @@ export async function runMonitorTick(): Promise<TickResult> {
             const ar = (await getBreakdown(siteId, {
               property: "event:props:name",
               metrics: "visitors",
-              period: "day",
-              date: today,
+              ...dayRange,
               filters: `event:goal==author;event:page==${row.page}`,
               limit: 5,
             })) as { results?: { name: string; visitors: number }[] };

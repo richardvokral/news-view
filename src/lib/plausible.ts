@@ -99,3 +99,16 @@ export async function getRealtimeVisitors(siteId: string): Promise<number> {
   );
   return typeof result === "number" ? result : 0;
 }
+
+// Rolling 48h window (yesterday..today UTC) so article queries don't snap
+// down to "today-only" numbers at UTC midnight.
+export function plausibleDayRange(now: Date = new Date()): {
+  period: "custom";
+  date: string;
+} {
+  const today = now.toISOString().slice(0, 10);
+  const y = new Date(now);
+  y.setUTCDate(y.getUTCDate() - 1);
+  const yesterday = y.toISOString().slice(0, 10);
+  return { period: "custom", date: `${yesterday},${today}` };
+}

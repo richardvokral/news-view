@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { isKnownSite, getBreakdown } from "@/lib/plausible";
+import { isKnownSite, getBreakdown, plausibleDayRange } from "@/lib/plausible";
 import { getMonitorConfig } from "@/lib/monitor/config";
 import { getDb, hasDb } from "@/lib/db";
 
@@ -56,7 +56,6 @@ export async function GET(request: NextRequest) {
     const hours = hoursParam
       ? Math.min(Math.max(1, Number(hoursParam)), 168)
       : cfg.windowHours;
-    const today = new Date().toISOString().slice(0, 10);
 
     const contribs: Record<string, { visitors: number; pageviews: number }> = {};
     const bump = (page: string, visitors: number, pageviews: number) => {
@@ -76,8 +75,7 @@ export async function GET(request: NextRequest) {
       const res = (await getBreakdown(site, {
         property: "event:page",
         metrics: "visitors,pageviews",
-        period: "day",
-        date: today,
+        ...plausibleDayRange(),
         filters: filter,
         limit: 200,
       })) as { results?: PlausiblePageRow[] };

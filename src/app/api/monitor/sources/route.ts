@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { isKnownSite, getBreakdown } from "@/lib/plausible";
+import { isKnownSite, getBreakdown, plausibleDayRange } from "@/lib/plausible";
 import { getMonitorConfig } from "@/lib/monitor/config";
 import { listPagePathsBySource } from "@/lib/monitor/queries";
 import { getRedis } from "@/lib/redis";
@@ -65,7 +65,6 @@ export async function GET(request: NextRequest) {
     ? Math.min(Math.max(1, Number(hoursParam)), 168)
     : defaultWindow;
   const source = params.get("source");
-  const today = new Date().toISOString().slice(0, 10);
 
   if (source) {
     const key = `monitor:sources:${site}:${hours}:${source}`;
@@ -76,8 +75,7 @@ export async function GET(request: NextRequest) {
         const res = (await getBreakdown(site, {
           property: "event:page",
           metrics: "visitors",
-          period: "day",
-          date: today,
+          ...plausibleDayRange(),
           filters: `visit:source==${source}`,
           limit: 200,
         })) as { results?: PlausiblePageRow[] };
@@ -126,8 +124,7 @@ export async function GET(request: NextRequest) {
         const res = (await getBreakdown(site, {
           property: "visit:source",
           metrics: "visitors",
-          period: "day",
-          date: today,
+          ...plausibleDayRange(),
           limit: Math.max(50, cfg.topSourcesLimit + 20),
         })) as { results?: PlausibleSourceRow[] };
         rawRows = res.results || [];

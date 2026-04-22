@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { isKnownSite, getBreakdown } from "@/lib/plausible";
+import { isKnownSite, getBreakdown, plausibleDayRange } from "@/lib/plausible";
 import { getMonitorConfig } from "@/lib/monitor/config";
 import { getRedis } from "@/lib/redis";
 
@@ -41,7 +41,6 @@ export async function GET(request: NextRequest) {
     const filters = pagePath
       ? `event:goal==author;event:page==${pagePath}`
       : `event:goal==author`;
-    const today = new Date().toISOString().slice(0, 10);
     const key = `monitor:authors:${site}:${hours}:${pagePath ?? "all"}`;
 
     try {
@@ -55,8 +54,7 @@ export async function GET(request: NextRequest) {
     const res = (await getBreakdown(site, {
       property: "event:props:name",
       metrics: "visitors",
-      period: "day",
-      date: today,
+      ...plausibleDayRange(),
       filters,
       limit: 50,
     })) as { results?: PlausibleAuthorRow[] };
