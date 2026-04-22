@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { usePolling } from "@/hooks/usePolling";
 
 interface UncoveredRow {
   externalId: number;
@@ -107,11 +108,7 @@ export default function CoverageTab({ site, siteBaseUrl, isAdmin }: Props) {
       .catch((e) => setError(String(e)));
   }, [site]);
 
-  useEffect(() => {
-    load();
-    const interval = setInterval(load, 120_000);
-    return () => clearInterval(interval);
-  }, [load]);
+  usePolling(site ? load : null, 120_000);
 
   const runNow = async () => {
     if (!site) return;

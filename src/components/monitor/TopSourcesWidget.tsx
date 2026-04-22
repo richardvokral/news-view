@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import { usePolling } from "@/hooks/usePolling";
 
 interface SourceRow {
   source: string;
@@ -51,31 +52,19 @@ export default function TopSourcesWidget({
   const [meta, setMeta] = useState<Meta | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     if (!site) return;
-    let cancelled = false;
-    const load = () => {
-      const params = new URLSearchParams({ site, hours: String(hours) });
-      fetch(`/api/monitor/sources?${params}`)
-        .then((r) => (r.ok ? r.json() : Promise.reject(`HTTP ${r.status}`)))
-        .then((data) => {
-          if (cancelled) return;
-          setSources((data.sources || []) as SourceRow[]);
-          setMeta((data.meta ?? null) as Meta | null);
-          setError(null);
-        })
-        .catch((e) => {
-          if (cancelled) return;
-          setError(String(e));
-        });
-    };
-    load();
-    const interval = setInterval(load, 60_000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
+    const params = new URLSearchParams({ site, hours: String(hours) });
+    fetch(`/api/monitor/sources?${params}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(`HTTP ${r.status}`)))
+      .then((data) => {
+        setSources((data.sources || []) as SourceRow[]);
+        setMeta((data.meta ?? null) as Meta | null);
+        setError(null);
+      })
+      .catch((e) => setError(String(e)));
   }, [site, hours]);
+  usePolling(site ? load : null, 120_000);
 
   const loading = sources === null && error === null;
 

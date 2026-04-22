@@ -12,6 +12,7 @@ import MonitorFilters, {
   type NumericOp,
 } from "./MonitorFilters";
 import SiteSelector from "@/components/reports/SiteSelector";
+import { usePolling } from "@/hooks/usePolling";
 import {
   computeTrendScore,
   formatTrendScore,
@@ -348,12 +349,7 @@ export default function MonitorDashboard({
       .catch((err) => setError(String(err)));
   }, [currentSite, hours, enabled]);
 
-  useEffect(() => {
-    fetchArticles();
-    if (!enabled) return;
-    const interval = setInterval(fetchArticles, 60_000);
-    return () => clearInterval(interval);
-  }, [fetchArticles, enabled]);
+  usePolling(enabled ? fetchArticles : null, 120_000);
 
   // Fetch page paths attributable to the active source.
   const sourceReq = useRef<AbortController | null>(null);

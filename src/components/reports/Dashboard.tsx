@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { usePolling } from "@/hooks/usePolling";
 import { defaultDashboardConfig } from "@/lib/dashboard/default-config";
 import DateRangePicker, {
   type DateRangeValue,
@@ -13,23 +14,19 @@ import type { WidgetConfig } from "@/types/dashboard";
 function RealtimeVisitors({ siteId }: { siteId: string }) {
   const [count, setCount] = useState<number | null>(null);
 
-  useEffect(() => {
-    function fetchRealtime() {
-      const params = new URLSearchParams({
-        endpoint: "realtime",
-        site: siteId,
-      });
-      fetch(`/api/plausible?${params}`)
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data) => {
-          if (typeof data === "number") setCount(data);
-        })
-        .catch(() => {});
-    }
-    fetchRealtime();
-    const interval = setInterval(fetchRealtime, 30000);
-    return () => clearInterval(interval);
+  const fetchRealtime = useCallback(() => {
+    const params = new URLSearchParams({
+      endpoint: "realtime",
+      site: siteId,
+    });
+    fetch(`/api/plausible?${params}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (typeof data === "number") setCount(data);
+      })
+      .catch(() => {});
   }, [siteId]);
+  usePolling(fetchRealtime, 60_000);
 
   if (count === null) return null;
   return (

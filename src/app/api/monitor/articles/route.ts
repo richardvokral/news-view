@@ -3,9 +3,12 @@ import { getSession } from "@/lib/auth";
 import { listArticlesWithRecentStats } from "@/lib/monitor/queries";
 import { getMonitorConfig } from "@/lib/monitor/config";
 import { isKnownSite } from "@/lib/plausible";
+import { getRedis } from "@/lib/redis";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const CACHE_TTL_SECONDS = 30;
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -28,15 +31,33 @@ export async function GET(request: NextRequest) {
         .filter(Boolean)
     : undefined;
 
+  const cacheKey = `monitor:articles:${siteId ?? "all"}:${hours}:${snapshotLimit}:${
+    pagePaths ? pagePaths.slice().sort().join(",") : "all"
+  }`;
+  try {
+    const redis = getRedis();
+    const cached = await redis.get(cacheKey);
+    if (cached) return NextResponse.json(JSON.parse(cached));
+  } catch {
+    // cache lookup is best-effort
+  }
+
   const articles = await listArticlesWithRecentStats(
     siteId,
     hours,
     snapshotLimit,
     pagePaths
   );
-  return NextResponse.json({
+  const body = {
     articles,
     windowHours: hours,
     siteId,
-  });
+  };
+  try {
+    const redis = getRedis();
+    await redis.set(cacheKey, JSON.stringify(body), "EX", CACHE_TTL_SECONDS);
+  } catch {
+    // cache write is best-effort
+  }
+  return NextResponse.json(body);
 }
