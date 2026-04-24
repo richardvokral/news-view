@@ -78,7 +78,7 @@ export async function runMonitorTick(): Promise<TickResult> {
   }
 
   const now = new Date();
-  const dayRange = plausibleDayRange(now);
+  const dayRange = plausibleDayRange(cfg.windowHours, now);
   const perSite: {
     siteId: string;
     articles: number;

@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
         const res = (await getBreakdown(site, {
           property: "event:page",
           metrics: "visitors",
-          ...plausibleDayRange(),
+          ...plausibleDayRange(hours),
           filters: `visit:source==${source}`,
           limit: 200,
         })) as { results?: PlausiblePageRow[] };
@@ -124,7 +124,7 @@ export async function GET(request: NextRequest) {
         const res = (await getBreakdown(site, {
           property: "visit:source",
           metrics: "visitors",
-          ...plausibleDayRange(),
+          ...plausibleDayRange(hours),
           limit: Math.max(50, cfg.topSourcesLimit + 20),
         })) as { results?: PlausibleSourceRow[] };
         rawRows = res.results || [];

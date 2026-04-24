@@ -155,7 +155,7 @@ export async function GET(request: NextRequest) {
       const res = (await getBreakdown(site, {
         property: "visit:source",
         metrics: "visitors",
-        ...plausibleDayRange(),
+        ...plausibleDayRange(hours),
         filters: `event:page==${pagePath}`,
         limit: 15,
       })) as { results?: PlausibleSourceRow[] };

@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
       const res = (await getBreakdown(site, {
         property: "event:page",
         metrics: "visitors,pageviews",
-        ...plausibleDayRange(),
+        ...plausibleDayRange(hours),
         filters: filter,
         limit: 200,
       })) as { results?: PlausiblePageRow[] };

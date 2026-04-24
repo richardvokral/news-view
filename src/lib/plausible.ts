@@ -100,15 +100,17 @@ export async function getRealtimeVisitors(siteId: string): Promise<number> {
   return typeof result === "number" ? result : 0;
 }
 
-// Rolling 48h window (yesterday..today UTC) so article queries don't snap
-// down to "today-only" numbers at UTC midnight.
-export function plausibleDayRange(now: Date = new Date()): {
-  period: "custom";
-  date: string;
-} {
+// Rolling window that spans at least `hours` of lookback (in calendar days,
+// rounded up, plus today) so article-lifetime queries don't drop traffic
+// from the earliest in-scope day when UTC midnight rolls over.
+export function plausibleDayRange(
+  hours: number = 48,
+  now: Date = new Date()
+): { period: "custom"; date: string } {
+  const daysBack = Math.max(1, Math.ceil(hours / 24));
   const today = now.toISOString().slice(0, 10);
-  const y = new Date(now);
-  y.setUTCDate(y.getUTCDate() - 1);
-  const yesterday = y.toISOString().slice(0, 10);
-  return { period: "custom", date: `${yesterday},${today}` };
+  const start = new Date(now);
+  start.setUTCDate(start.getUTCDate() - daysBack);
+  const startDate = start.toISOString().slice(0, 10);
+  return { period: "custom", date: `${startDate},${today}` };
 }
