@@ -48,6 +48,14 @@ export default function TopNav({ email, isAdmin, sections }: Props) {
               News
             </Link>
           )}
+          {email && (
+            <Link
+              href="/analyze"
+              className={`text-sm font-medium ${active("/analyze")}`}
+            >
+              Analyze
+            </Link>
+          )}
           {isAdmin && (
             <Link
               href="/admin"

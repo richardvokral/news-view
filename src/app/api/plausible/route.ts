@@ -7,36 +7,15 @@ import {
   isKnownSite,
   defaultSiteId,
 } from "@/lib/plausible";
+import {
+  VALID_PERIODS,
+  MAX_LIMIT,
+  validateMetrics,
+} from "@/lib/plausible-validate";
 
 // Session is verified by middleware (cookie check at the edge).
 // This route is called 10+ times per dashboard render, so we skip DB-backed
 // section resolution here and rely on the middleware gate.
-
-const VALID_METRICS = new Set([
-  "visitors",
-  "visits",
-  "pageviews",
-  "views_per_visit",
-  "bounce_rate",
-  "visit_duration",
-  "events",
-]);
-
-const VALID_PERIODS = new Set([
-  "day",
-  "7d",
-  "30d",
-  "month",
-  "6mo",
-  "12mo",
-  "custom",
-]);
-
-const MAX_LIMIT = 100;
-
-function validateMetrics(metrics: string): boolean {
-  return metrics.split(",").every((m) => VALID_METRICS.has(m.trim()));
-}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
