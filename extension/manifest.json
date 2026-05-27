@@ -1,10 +1,17 @@
 {
   "manifest_version": 3,
-  "name": "AI korektura (Stage 0)",
-  "version": "0.0.1",
-  "description": "Stage 0 read-test: prove the extension can find the CMS article editor and read its title + body text.",
+  "name": "AI korektura",
+  "version": "0.1.0",
+  "description": "Česká AI korektura článků přímo v CMS: přihlášení e-mailem, návrhy oprav, schválení a vložení zpět do editoru.",
   "permissions": ["storage", "activeTab", "scripting"],
-  "host_permissions": ["https://cms.echomedia.cz/*"],
+  "host_permissions": [
+    "https://cms.echomedia.cz/*",
+    "https://news-view.vercel.app/*",
+    "http://localhost:3000/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
       "matches": ["https://cms.echomedia.cz/*"],

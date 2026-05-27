@@ -220,3 +220,118 @@ ALTER TABLE monitor_config
   ADD COLUMN IF NOT EXISTS coverage_model TEXT NOT NULL DEFAULT 'claude-haiku-4-5-20251001',
   ADD COLUMN IF NOT EXISTS google_trends_enabled BOOLEAN NOT NULL DEFAULT false,
   ADD COLUMN IF NOT EXISTS google_trends_locales JSONB NOT NULL DEFAULT '["CZ","DE","US"]'::jsonb;
+
+-- =====================================================================
+-- AI Czech proofreading (Stage 1). All DDL idempotent.
+-- =====================================================================
+
+-- Bearer sessions for the Chrome extension. token stored as SHA-256 hash
+-- (never plaintext). password_hash/password_set_at are reserved for the next
+-- stage (email-only login for now).
+CREATE TABLE IF NOT EXISTS proofread_sessions (
+  id BIGSERIAL PRIMARY KEY,
+  email TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  password_hash TEXT,
+  password_set_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_used_at TIMESTAMPTZ,
+  expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_proofread_sessions_email ON proofread_sessions(email);
+CREATE INDEX IF NOT EXISTS idx_proofread_sessions_expires ON proofread_sessions(expires_at);
+
+-- Selectable LLM models with per-1M-token USD prices and labels.
+-- key is a stable synthetic id (e.g. 'openai:gpt-4o-mini').
+CREATE TABLE IF NOT EXISTS proofread_models (
+  key TEXT PRIMARY KEY,
+  provider TEXT NOT NULL CHECK (provider IN ('openai', 'anthropic')),
+  model_id TEXT NOT NULL,
+  label TEXT NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT true,
+  input_usd_per_mtok NUMERIC(10, 4) NOT NULL DEFAULT 0,
+  output_usd_per_mtok NUMERIC(10, 4) NOT NULL DEFAULT 0,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- One system prompt per mode; is_default_mode marks the extension default.
+CREATE TABLE IF NOT EXISTS proofread_prompts (
+  mode TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  body TEXT NOT NULL,
+  is_default_mode BOOLEAN NOT NULL DEFAULT false,
+  updated_by TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Per-user override of model and/or prompt. email is the de-facto key (no
+-- users table exists; matches access_users). NULL => fall back to defaults.
+CREATE TABLE IF NOT EXISTS proofread_user_config (
+  email TEXT PRIMARY KEY,
+  model_key TEXT REFERENCES proofread_models(key) ON DELETE SET NULL,
+  prompt_override TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Singleton: which model is the system default (mirrors monitor_config).
+CREATE TABLE IF NOT EXISTS proofread_settings (
+  id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  default_model_key TEXT REFERENCES proofread_models(key) ON DELETE SET NULL,
+  updated_by TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Per-request usage log. NEVER stores article text, only counts and ids.
+CREATE TABLE IF NOT EXISTS proofread_usage (
+  id BIGSERIAL PRIMARY KEY,
+  email TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  model_id TEXT NOT NULL,
+  model_key TEXT,
+  mode TEXT NOT NULL,
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  cost_usd NUMERIC(12, 6) NOT NULL DEFAULT 0,
+  cost_czk NUMERIC(12, 4) NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'ok',
+  article_id TEXT,
+  source_url TEXT,
+  input_chars INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_proofread_usage_email ON proofread_usage(email, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_proofread_usage_model ON proofread_usage(model_key, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_proofread_usage_created ON proofread_usage(created_at DESC);
+
+-- Seed both providers (prices = USD per 1M tokens; editable in admin).
+INSERT INTO proofread_models
+  (key, provider, model_id, label, enabled, input_usd_per_mtok, output_usd_per_mtok, sort_order)
+VALUES
+  ('openai:gpt-4o-mini',   'openai',    'gpt-4o-mini',               'OpenAI GPT-4o mini (cheap)',  true, 0.15, 0.60, 10),
+  ('openai:gpt-4o',        'openai',    'gpt-4o',                    'OpenAI GPT-4o (quality)',     true, 2.50, 10.00, 20),
+  ('anthropic:haiku-4-5',  'anthropic', 'claude-haiku-4-5-20251001', 'Claude Haiku 4.5 (cheap)',    true, 1.00, 5.00, 30),
+  ('anthropic:sonnet-4-6', 'anthropic', 'claude-sonnet-4-6',         'Claude Sonnet 4.6 (quality)', true, 3.00, 15.00, 40)
+ON CONFLICT (key) DO NOTHING;
+
+-- System default model pointer.
+INSERT INTO proofread_settings (id, default_model_key) VALUES (1, 'openai:gpt-4o-mini')
+ON CONFLICT (id) DO NOTHING;
+
+-- Seed the 3 modes; pravopis_gramatika_interpunkce is the default mode.
+INSERT INTO proofread_prompts (mode, label, body, is_default_mode) VALUES
+  ('pravopis_gramatika', 'Pravopis + gramatika',
+   'Jsi korektor českého textu. Oprav POUZE pravopisné a gramatické chyby (shoda podmětu s přísudkem, koncovky, i/y, velká písmena, překlepy). NEopravuj interpunkci ani styl. Zachovej beze změny veškeré HTML značky, atributy a strukturu; uvnitř značek text neměň. Vrať opravený text a strukturovaný seznam změn.',
+   false),
+  ('pravopis_gramatika_interpunkce', 'Pravopis + gramatika + interpunkce',
+   'Jsi korektor českého textu. Oprav pravopisné a gramatické chyby a interpunkci (čárky, tečky, mezery, uvozovky, pomlčky). NEMĚŇ slovosled ani styl nad rámec nezbytných oprav. Zachovej beze změny veškeré HTML značky, atributy a strukturu; uvnitř značek text neměň. Vrať opravený text a strukturovaný seznam změn.',
+   true),
+  ('jemna_stylistika', 'Jemná stylistika',
+   'Jsi jazykový korektor a stylistický redaktor českého textu. Oprav pravopis, gramatiku a interpunkci a navíc proveď JEMNÉ stylistické úpravy (plynulost, opakování slov, neobratné vazby), ale zachovej autorův hlas a význam. Zachovej beze změny veškeré HTML značky, atributy a strukturu; uvnitř značek text neměň. Vrať opravený text a strukturovaný seznam změn.',
+   false)
+ON CONFLICT (mode) DO NOTHING;

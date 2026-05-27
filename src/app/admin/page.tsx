@@ -26,6 +26,11 @@ const TILES = [
     title: "App Settings",
     desc: "News pipeline API keys and clustering mode.",
   },
+  {
+    href: "/admin/proofread",
+    title: "AI Proofreading",
+    desc: "Models, prompts, per-user config and usage for the Czech proofreader.",
+  },
 ];
 
 export default function AdminHome() {

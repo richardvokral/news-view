@@ -2,8 +2,9 @@
 // can see window.CKEDITOR, which the isolated content script cannot reach.
 // Communicates with the content script purely through window.postMessage.
 //
-// Stage 0 implements read-only actions (PING, GET_CKEDITOR_DATA). Write-back
-// (SET_CKEDITOR_DATA) is intentionally left for a later stage.
+// Read actions: PING, GET_CKEDITOR_DATA. Write-back: SET_CKEDITOR_DATA goes
+// through the CKEditor API (not raw iframe DOM) and notifies AngularJS via the
+// backing textarea so the CMS save workflow sees the change.
 (function () {
   "use strict";
 
@@ -43,7 +44,7 @@
     return (tmp.textContent || "").replace(/ /g, " ").trim();
   }
 
-  function handle(action) {
+  function handle(action, payload) {
     switch (action) {
       case "PING":
         return { ready: !!(window.CKEDITOR && window.CKEDITOR.instances) };
@@ -61,6 +62,29 @@
         };
       }
 
+      case "SET_CKEDITOR_DATA": {
+        const editor = findArticleEditor();
+        if (!editor) {
+          return { error: "CKEDITOR instance not found" };
+        }
+        const html = payload && typeof payload.html === "string" ? payload.html : "";
+        try {
+          editor.setData(html);
+          if (typeof editor.updateElement === "function") editor.updateElement();
+          try { editor.fire("change"); } catch (e) {}
+        } catch (e) {
+          return { error: String((e && e.message) || e) };
+        }
+        // Notify AngularJS (ng-model="article.content") via the backing textarea
+        // so the CMS registers an unsaved change.
+        const textarea = document.querySelector(CONTENT_TEXTAREA);
+        if (textarea) {
+          textarea.dispatchEvent(new Event("input", { bubbles: true }));
+          textarea.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+        return { ok: true };
+      }
+
       default:
         return { error: "Unknown action: " + action };
     }
@@ -74,7 +98,7 @@
 
     let payload;
     try {
-      payload = handle(data.action);
+      payload = handle(data.action, data.payload);
     } catch (err) {
       payload = { error: String((err && err.message) || err) };
     }
