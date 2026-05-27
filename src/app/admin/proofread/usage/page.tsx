@@ -1,11 +1,16 @@
 import Link from "next/link";
 import ProofreadUsageView from "@/components/admin/ProofreadUsageView";
-import { aggregateByUser, aggregateByModel } from "@/lib/proofread/usage";
+import {
+  aggregateByUser,
+  aggregateByModel,
+  listUsage,
+} from "@/lib/proofread/usage";
 
 export default async function ProofreadUsagePage() {
-  const [byUser, byModel] = await Promise.all([
+  const [byUser, byModel, requests] = await Promise.all([
     aggregateByUser(),
     aggregateByModel(),
+    listUsage(200),
   ]);
   return (
     <div>
@@ -19,7 +24,11 @@ export default async function ProofreadUsagePage() {
       <p className="mb-6 text-sm text-gray-600">
         Token usage and estimated cost. Article text is never stored.
       </p>
-      <ProofreadUsageView byUser={byUser} byModel={byModel} />
+      <ProofreadUsageView
+        byUser={byUser}
+        byModel={byModel}
+        requests={requests}
+      />
     </div>
   );
 }

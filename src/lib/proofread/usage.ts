@@ -132,3 +132,68 @@ export async function aggregateByModel(): Promise<UsageByModel[]> {
     costCzk: Number(r.cost_czk),
   }));
 }
+
+export interface UsageRow {
+  id: number;
+  createdAt: string;
+  email: string;
+  provider: string;
+  modelId: string;
+  mode: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  costCzk: number;
+  status: string;
+  articleId: string | null;
+  sourceUrl: string | null;
+  inputChars: number;
+}
+
+interface UsageRowDb {
+  id: string | number;
+  created_at: string | Date | null;
+  email: string;
+  provider: string;
+  model_id: string;
+  mode: string;
+  input_tokens: string | number;
+  output_tokens: string | number;
+  cost_usd: string | number;
+  cost_czk: string | number;
+  status: string;
+  article_id: string | null;
+  source_url: string | null;
+  input_chars: string | number;
+}
+
+/** Individual requests, newest first. */
+export async function listUsage(limit = 200): Promise<UsageRow[]> {
+  if (!hasDb()) return [];
+  const safeLimit = Math.min(Math.max(1, Math.trunc(limit)), 1000);
+  const { rows } = await getDb().query<UsageRowDb>(
+    `SELECT id, created_at, email, provider, model_id, mode,
+            input_tokens, output_tokens, cost_usd, cost_czk,
+            status, article_id, source_url, input_chars
+       FROM proofread_usage
+      ORDER BY created_at DESC
+      LIMIT $1`,
+    [safeLimit]
+  );
+  return rows.map((r) => ({
+    id: Number(r.id),
+    createdAt: r.created_at ? new Date(r.created_at as string).toISOString() : "",
+    email: r.email,
+    provider: r.provider,
+    modelId: r.model_id,
+    mode: r.mode,
+    inputTokens: Number(r.input_tokens),
+    outputTokens: Number(r.output_tokens),
+    costUsd: Number(r.cost_usd),
+    costCzk: Number(r.cost_czk),
+    status: r.status,
+    articleId: r.article_id,
+    sourceUrl: r.source_url,
+    inputChars: Number(r.input_chars),
+  }));
+}
