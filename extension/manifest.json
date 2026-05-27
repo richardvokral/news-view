@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "AI korektura (Stage 0)",
+  "version": "0.0.1",
+  "description": "Stage 0 read-test: prove the extension can find the CMS article editor and read its title + body text.",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": ["https://cms.echomedia.cz/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://cms.echomedia.cz/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "all_frames": true,
+      "match_about_blank": true,
+      "match_origin_as_fallback": true,
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["bridge.js"],
+      "matches": ["https://cms.echomedia.cz/*"]
+    }
+  ]
+}
