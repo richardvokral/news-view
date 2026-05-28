@@ -1,36 +1,49 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# news-view
 
-## Getting Started
+Internal newsroom dashboard for monitoring article performance, clustering topics, and proofreading copy. Built on Next.js (App Router) and deployed to Vercel.
 
-First, run the development server:
+## Features
+
+- **News & Reports** — clustered topic views and editorial reports backed by news APIs and RSS.
+- **Article Monitor** — near-real-time per-article pageviews pulled from Plausible (see [`docs/article-monitor.md`](docs/article-monitor.md)).
+- **Analyze** — AI-assisted analysis of article performance and titles.
+- **Proofread API + Chrome extension** — Czech-language proofreading inside the CMS editor (see [`extension/README.md`](extension/README.md)).
+- **Admin** — user/domain ACL, per-feature settings, manual cron triggers.
+
+## Quick start
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env.local   # fill in the values you need
+npm run dev                  # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`npm run build` produces a production build; `npm run lint` runs ESLint.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Configuration
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+All secrets live in env vars; see [`.env.example`](.env.example) for the full list. Minimum to boot locally:
 
-## Learn More
+- `DATABASE_URL` — Neon Postgres
+- `STORAGE_REDIS_REDIS_URL` — Redis (Vercel Redis or local)
+- `LOGTO_*` — OIDC auth (Logto)
+- `ADMIN_EMAILS` — semicolon-separated admin allowlist
 
-To learn more about Next.js, take a look at the following resources:
+News-API and AI keys are optional per feature and can also be set at `/admin/settings`. After first boot, sign in as an admin and POST `/api/admin/migrate` to create DB tables.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Tech stack
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Next.js 16 / React 19 · TypeScript · Tailwind v4 · Neon Postgres · Redis · Upstash QStash (cron) · Logto (auth) · Plausible · Anthropic + OpenAI SDKs.
 
-## Deploy on Vercel
+## Project layout
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```
+src/app/         routes (news, reports, analyze, monitor, admin, api/*)
+src/components/  feature-scoped React components
+src/lib/         server logic: fetchers, clustering, storage, auth, monitor, proofread
+src/middleware.ts  Logto session gate for protected routes
+extension/       Chrome MV3 proofreading extension (loaded unpacked)
+docs/            feature runbooks
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+More detail and conventions for contributors live in [`CLAUDE.md`](CLAUDE.md).
