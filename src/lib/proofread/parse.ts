@@ -35,8 +35,6 @@ export function normalizeResult(
         .map((s, i) => ({ ...s, id: `s${i}` }))
     : [];
   return {
-    title: typeof obj.title === "string" ? obj.title : null,
-    bodyHtml: typeof obj.bodyHtml === "string" ? obj.bodyHtml : null,
     summary: typeof obj.summary === "string" ? obj.summary : "",
     warnings: Array.isArray(obj.warnings)
       ? obj.warnings.filter((w): w is string => typeof w === "string")

@@ -399,6 +399,15 @@
     container.textContent = "";
     const suggestions = Array.isArray(result.suggestions) ? result.suggestions : [];
 
+    // The backend no longer echoes the corrected text — we reconstruct it here
+    // from the suggestion list so the function stays fast on long articles.
+    const titleSugg = suggestions.filter((s) => s.field === "title");
+    const bodySugg = suggestions.filter((s) => s.field === "body");
+    const correctedTitle =
+      original.titleText != null ? applyReplacements(original.titleText, titleSugg) : null;
+    const correctedHtml =
+      original.originalHtml != null ? applyReplacements(original.originalHtml, bodySugg) : null;
+
     if (result.summary) {
       container.appendChild(field("Shrnutí", result.summary));
     }
@@ -417,13 +426,13 @@
     }
 
     // Diff views.
-    if (original.titleText != null && typeof result.title === "string") {
-      container.appendChild(diffField("Titulek (návrh)", original.titleText, result.title));
+    if (correctedTitle != null) {
+      container.appendChild(diffField("Titulek (návrh)", original.titleText, correctedTitle));
     }
-    if (original.originalHtml != null && typeof result.bodyHtml === "string") {
-      const oldPlain = htmlToText(original.originalHtml);
-      const newPlain = htmlToText(result.bodyHtml);
-      container.appendChild(diffField("Tělo (návrh)", oldPlain, newPlain));
+    if (correctedHtml != null) {
+      container.appendChild(
+        diffField("Tělo (návrh)", htmlToText(original.originalHtml), htmlToText(correctedHtml))
+      );
     }
 
     // Suggestions list with accept/reject.
@@ -489,10 +498,7 @@
     applyAll.addEventListener("click", async () => {
       await writeBack(
         original,
-        {
-          title: typeof result.title === "string" ? result.title : null,
-          bodyHtml: typeof result.bodyHtml === "string" ? result.bodyHtml : null,
-        },
+        { title: correctedTitle, bodyHtml: correctedHtml },
         noteEl
       );
     });

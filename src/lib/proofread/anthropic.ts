@@ -6,19 +6,10 @@ import { normalizeResult } from "./parse";
 
 const TOOL: Anthropic.Tool = {
   name: "submit_proofread",
-  description: "Odešli opravený text a strukturovaný seznam změn.",
+  description: "Odešli strukturovaný seznam navržených oprav.",
   input_schema: {
     type: "object",
     properties: {
-      title: {
-        type: "string",
-        description: "Opravený titulek; vynech, pokud titulek nebyl zadán.",
-      },
-      bodyHtml: {
-        type: "string",
-        description:
-          "Kompletní opravené HTML těla; vynech, pokud tělo nebylo zadáno.",
-      },
       suggestions: {
         type: "array",
         items: {

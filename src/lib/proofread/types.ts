@@ -35,8 +35,6 @@ export interface Suggestion {
 }
 
 export interface ProofreadResult {
-  title: string | null;
-  bodyHtml: string | null;
   suggestions: Suggestion[];
   summary: string;
   warnings: string[];

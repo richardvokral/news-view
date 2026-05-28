@@ -8,7 +8,7 @@ import { runAnthropic } from "@/lib/proofread/anthropic";
 import { estimateCost, recordUsage } from "@/lib/proofread/usage";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export function OPTIONS() {
   return corsPreflight();
@@ -101,8 +101,6 @@ export async function POST(req: NextRequest) {
     });
 
     return corsJson({
-      title: result.title,
-      bodyHtml: result.bodyHtml,
       suggestions: result.suggestions,
       summary: result.summary,
       warnings: result.warnings,
