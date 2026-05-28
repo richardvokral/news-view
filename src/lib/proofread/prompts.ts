@@ -1,7 +1,7 @@
 import type { ProofreadUserPayload } from "./types";
 
 const OUTPUT_CONTRACT = `Odpověď MUSÍ být POUZE JSON objekt s těmito poli (žádný jiný text před ani za):
-- "suggestions": pole JSON objektů; KAŽDÁ chyba = JEDNA položka, žádné slučování.
+- "suggestions": pole JSON objektů; KAŽDÁ chyba = JEDNA položka, žádné slučování. Použito vždy když je nalezena chyba nebo návrh.
   Každá položka: { "field": "title" nebo "body", "type": typ chyby (např. "pravopis", "interpunkce", "gramatika", "stylistika"), "original": KRÁTKÝ doslovný úryvek z původního textu (2–10 slov, znak po znaku totožný s textem), "replacement": stejný úryvek s opravou, "explanation": stručné vysvětlení česky, "confidence": 0..1 }
 - "summary": stručné shrnutí kolik a jakých chyb (např. "3 chyby: 2 čárky, 1 překlep"). NEPOPISUJ konkrétní opravy ani neříkej "Opraveno X" – konkrétní opravy patří POUZE do "suggestions".
 - "warnings": pole stringů s upozorněními, může být prázdné.
@@ -12,6 +12,8 @@ PRAVIDLA:
 - Opakující se chyba: každý výskyt jako samostatná JSON položka.
 - U HTML neměň značky, atributy ani URL – opravuj jen textový obsah.
 - Pokud opravdu není co opravit: "suggestions": [], "summary": "Bez chyb."
+- Pokud jsi našel chyby, musí být použito pole "suggestions", nelze chybi vypsat pouze do summary nebo warnings.
+- Pokud jsi u nějaké části zjistil, že je bez chyb tak ji nedávej do pole "suggestions"
 - DŮLEŽITÉ: Jakákoliv dřívější instrukce typu "vrať opravený text" nebo "kompletní opravené HTML" se NEUPLATŇUJE – vrať POUZE výše popsaný JSON.
 
 PŘÍKLAD JSON ODPOVĚDI:
