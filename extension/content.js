@@ -440,7 +440,10 @@
       });
       container.appendChild(list);
     } else {
-      container.appendChild(el("div", "ai-proofreader-status", "Žádné návrhy — text je v pořádku."));
+      const emptyMsg = result.summary && /chyb|oprav/i.test(result.summary)
+        ? "Model nenavrhl žádné konkrétní opravy (vrátil jen shrnutí). Zkuste jiný model nebo upravte prompt v adminu."
+        : "Žádné návrhy — text je v pořádku.";
+      container.appendChild(el("div", "ai-proofreader-status", emptyMsg));
     }
 
     // Action buttons.
