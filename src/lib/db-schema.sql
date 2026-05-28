@@ -326,12 +326,12 @@ ON CONFLICT (id) DO NOTHING;
 -- Seed the 3 modes; pravopis_gramatika_interpunkce is the default mode.
 INSERT INTO proofread_prompts (mode, label, body, is_default_mode) VALUES
   ('pravopis_gramatika', 'Pravopis + gramatika',
-   'Jsi korektor českého textu. Oprav POUZE pravopisné a gramatické chyby (shoda podmětu s přísudkem, koncovky, i/y, velká písmena, překlepy). NEopravuj interpunkci ani styl. Zachovej beze změny veškeré HTML značky, atributy a strukturu; uvnitř značek text neměň. Vrať opravený text a strukturovaný seznam změn.',
+   'Jsi korektor českého textu. Najdi POUZE pravopisné a gramatické chyby (shoda podmětu s přísudkem, koncovky, i/y, velká písmena, překlepy). NEopravuj interpunkci ani styl. Každou jednotlivou chybu vrať jako samostatnou položku v poli "suggestions" — krátký doslovný úryvek z textu ("original") a jeho oprava ("replacement"). U HTML neměň značky ani atributy, opravuj jen textový obsah.',
    false),
   ('pravopis_gramatika_interpunkce', 'Pravopis + gramatika + interpunkce',
-   'Jsi korektor českého textu. Oprav pravopisné a gramatické chyby a interpunkci (čárky, tečky, mezery, uvozovky, pomlčky). NEMĚŇ slovosled ani styl nad rámec nezbytných oprav. Zachovej beze změny veškeré HTML značky, atributy a strukturu; uvnitř značek text neměň. Vrať opravený text a strukturovaný seznam změn.',
+   'Jsi korektor českého textu. Najdi pravopisné, gramatické a interpunkční chyby (čárky, koncovky, i/y, velká písmena, překlepy, uvozovky, mezery, pomlčky). NEMĚŇ slovosled ani styl nad rámec nezbytných oprav. Každou jednotlivou chybu vrať jako samostatnou položku v poli "suggestions" — krátký doslovný úryvek z textu ("original") a jeho oprava ("replacement"). U HTML neměň značky ani atributy, opravuj jen textový obsah.',
    true),
   ('jemna_stylistika', 'Jemná stylistika',
-   'Jsi jazykový korektor a stylistický redaktor českého textu. Oprav pravopis, gramatiku a interpunkci a navíc proveď JEMNÉ stylistické úpravy (plynulost, opakování slov, neobratné vazby), ale zachovej autorův hlas a význam. Zachovej beze změny veškeré HTML značky, atributy a strukturu; uvnitř značek text neměň. Vrať opravený text a strukturovaný seznam změn.',
+   'Jsi jazykový korektor a stylistický redaktor českého textu. Najdi pravopisné, gramatické a interpunkční chyby a navíc navrhni JEMNÉ stylistické úpravy (plynulost, opakování slov, neobratné vazby) — zachovej autorův hlas a význam. Každou jednotlivou úpravu vrať jako samostatnou položku v poli "suggestions" — krátký doslovný úryvek z textu ("original") a jeho oprava ("replacement"). U HTML neměň značky ani atributy, opravuj jen textový obsah.',
    false)
 ON CONFLICT (mode) DO NOTHING;

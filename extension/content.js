@@ -142,44 +142,6 @@
     return out;
   }
 
-  // ---- Word-level diff (for the review display) -----------------------------
-
-  function tokenize(str) {
-    return (str || "").split(/(\s+)/);
-  }
-
-  function diffWords(oldStr, newStr) {
-    const a = tokenize(oldStr);
-    const b = tokenize(newStr);
-    const n = a.length;
-    const m = b.length;
-    const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
-    for (let i = n - 1; i >= 0; i--) {
-      for (let j = m - 1; j >= 0; j--) {
-        dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
-      }
-    }
-    const out = [];
-    let i = 0;
-    let j = 0;
-    while (i < n && j < m) {
-      if (a[i] === b[j]) {
-        out.push({ type: "eq", text: a[i] });
-        i++;
-        j++;
-      } else if (dp[i + 1][j] >= dp[i][j + 1]) {
-        out.push({ type: "del", text: a[i] });
-        i++;
-      } else {
-        out.push({ type: "ins", text: b[j] });
-        j++;
-      }
-    }
-    while (i < n) out.push({ type: "del", text: a[i++] });
-    while (j < m) out.push({ type: "ins", text: b[j++] });
-    return out;
-  }
-
   // ---- UI helpers -----------------------------------------------------------
 
   const BUTTON_ID = "ai-proofreader-button";
@@ -399,8 +361,8 @@
     container.textContent = "";
     const suggestions = Array.isArray(result.suggestions) ? result.suggestions : [];
 
-    // The backend no longer echoes the corrected text — we reconstruct it here
-    // from the suggestion list so the function stays fast on long articles.
+    // The backend doesn't echo the corrected text — we reconstruct it here from
+    // the suggestion list (for the "Vložit celou opravenou verzi" shortcut).
     const titleSugg = suggestions.filter((s) => s.field === "title");
     const bodySugg = suggestions.filter((s) => s.field === "body");
     const correctedTitle =
@@ -425,26 +387,30 @@
       container.appendChild(w);
     }
 
-    // Diff views.
-    if (correctedTitle != null) {
-      container.appendChild(diffField("Titulek (návrh)", original.titleText, correctedTitle));
+    // A suggestion is "usable" if its `original` snippet can be found
+    // verbatim in the source (otherwise applying it is a no-op).
+    function sourceFor(s) {
+      return s.field === "title" ? original.titleText : original.originalHtml;
     }
-    if (correctedHtml != null) {
-      container.appendChild(
-        diffField("Tělo (návrh)", htmlToText(original.originalHtml), htmlToText(correctedHtml))
-      );
+    function isApplicable(s) {
+      const src = sourceFor(s);
+      return !!s.original && typeof src === "string" && src.indexOf(s.original) >= 0;
     }
 
-    // Suggestions list with accept/reject.
     const checks = [];
     if (suggestions.length) {
       const list = el("div", "ai-proofreader-suggestions");
       list.appendChild(el("div", "ai-proofreader-label", "Návrhy (" + suggestions.length + ")"));
       suggestions.forEach((s, i) => {
-        const row = el("div", "ai-proofreader-suggestion");
+        const applicable = isApplicable(s);
+        const row = el(
+          "div",
+          "ai-proofreader-suggestion" + (applicable ? "" : " ai-proofreader-suggestion-bad")
+        );
         const cb = document.createElement("input");
         cb.type = "checkbox";
-        cb.checked = true;
+        cb.checked = applicable;
+        cb.disabled = !applicable;
         checks[i] = cb;
         const main = el("div", "ai-proofreader-suggestion-main");
         const change = el("div", "ai-proofreader-change");
@@ -456,8 +422,16 @@
         change.appendChild(ins);
         main.appendChild(change);
         if (s.explanation) main.appendChild(el("div", "ai-proofreader-expl", s.explanation));
-        const tag = el("span", "ai-proofreader-pill", (s.field === "title" ? "titulek" : "tělo") + " · " + (s.type || ""));
-        main.appendChild(tag);
+        const pills = el("div", null);
+        pills.appendChild(
+          el("span", "ai-proofreader-pill", (s.field === "title" ? "titulek" : "tělo") + " · " + (s.type || ""))
+        );
+        if (!applicable) {
+          pills.appendChild(
+            el("span", "ai-proofreader-pill ai-proofreader-pill-bad", "nelze najít v textu")
+          );
+        }
+        main.appendChild(pills);
         const cbWrap = el("label", "ai-proofreader-cb");
         cbWrap.appendChild(cb);
         row.appendChild(cbWrap);
@@ -530,12 +504,6 @@
     }
   }
 
-  function htmlToText(html) {
-    const tmp = document.createElement("div");
-    tmp.innerHTML = html || "";
-    return (tmp.textContent || "").replace(/ /g, " ").replace(/\s+/g, " ").trim();
-  }
-
   function field(label, value) {
     const wrap = el("div", "ai-proofreader-field");
     wrap.appendChild(el("div", "ai-proofreader-label", label));
@@ -543,28 +511,6 @@
     return wrap;
   }
 
-  function diffField(label, oldStr, newStr) {
-    const wrap = el("div", "ai-proofreader-field");
-    wrap.appendChild(el("div", "ai-proofreader-label", label));
-    // Guard the O(n*m) diff: for very long texts show before/after blocks.
-    if ((oldStr || "").length + (newStr || "").length > 12000) {
-      const before = el("div", "ai-proofreader-diff", oldStr);
-      const after = el("div", "ai-proofreader-diff ai-proofreader-ins", newStr);
-      wrap.appendChild(before);
-      wrap.appendChild(after);
-      return wrap;
-    }
-    const box = el("div", "ai-proofreader-diff");
-    diffWords(oldStr, newStr).forEach((part) => {
-      if (part.type === "eq") {
-        box.appendChild(document.createTextNode(part.text));
-      } else {
-        box.appendChild(el("span", part.type === "del" ? "ai-proofreader-del" : "ai-proofreader-ins", part.text));
-      }
-    });
-    wrap.appendChild(box);
-    return wrap;
-  }
 
   function renderFooter() {
     const footer = el("div", "ai-proofreader-footer");

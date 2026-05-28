@@ -305,6 +305,7 @@
 .ai-proofreader-pill {
   display: inline-block;
   margin-top: 4px;
+  margin-right: 4px;
   padding: 1px 6px;
   font-size: 10px;
   text-transform: uppercase;
@@ -312,6 +313,15 @@
   color: #6b7280;
   background: #f3f4f6;
   border-radius: 10px;
+}
+
+.ai-proofreader-pill-bad {
+  color: #b45309;
+  background: #fef3c7;
+}
+
+.ai-proofreader-suggestion-bad {
+  opacity: 0.65;
 }
 
 .ai-proofreader-actions {
