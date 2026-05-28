@@ -12,6 +12,8 @@ PRAVIDLA:
 - Opakující se chyba: každý výskyt jako samostatná JSON položka.
 - U HTML neměň značky, atributy ani URL – opravuj jen textový obsah.
 - Pokud opravdu není co opravit: "suggestions": [], "summary": "Bez chyb."
+- Pokud jsi našel chyby, musí být použity obě pole "suggestions" a "summary"
+- Pokud jsi u nějaké části zjistil, že je bez chyb tak ji nedávej do pole "suggestions"
 - DŮLEŽITÉ: Jakákoliv dřívější instrukce typu "vrať opravený text" nebo "kompletní opravené HTML" se NEUPLATŇUJE – vrať POUZE výše popsaný JSON.
 
 PŘÍKLAD JSON ODPOVĚDI:
