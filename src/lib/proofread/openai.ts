@@ -16,7 +16,7 @@ export async function runOpenAI(
   const client = new OpenAI({ apiKey: opts.apiKey });
   const response = await client.chat.completions.create({
     model: opts.modelId,
-    max_tokens: 8192,
+    max_completion_tokens: 8192,
     temperature: 0.2,
     response_format: { type: "json_object" },
     messages: [
