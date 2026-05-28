@@ -8,6 +8,24 @@ Working notes for Claude Code (and humans skimming the repo). Keep the README sh
 
 It is a single Next.js 16 (App Router) app deployed to Vercel, with state split across Neon Postgres (durable: articles, ACL, dashboard layouts, monitor snapshots) and Redis (hot path: caches, rate limits, settings overrides).
 
+## Workflow
+
+The owner (Richard) drives this repo through Claude Code — either the desktop app or the web UI at `claude.ai/code`. There is no separate local checkout / PR review step in the normal loop:
+
+1. Open a task in Claude Code (app or web).
+2. Claude makes changes on a working branch and commits.
+3. Commits are pushed straight to the **default branch** on GitHub (currently `claude/news-aggregator-tool-HvXDC`, not `main`).
+4. Vercel is wired to the default branch and **auto-deploys on every push** — production reflects whatever just landed.
+
+Implications when you (Claude) are working here:
+
+- Treat every push to the default branch as a production deploy. There is no staging environment in front of it.
+- Before pushing, make sure `npm run build` and `npm run lint` would pass — a broken build means a broken production deploy.
+- Never force-push the default branch, and never rewrite its history. Add new commits instead.
+- The "feature branch" the task instructions point you at is a working branch; the final landing point is the default branch. If the user says "push to default" or "ship it", fast-forward the default branch from the working branch (don't merge-commit) so history stays linear.
+- Don't open PRs unless explicitly asked — the workflow does not use them.
+- Secrets / env changes are managed in the Vercel dashboard, not in the repo. Adding a new env var means: document it in `.env.example` *and* tell the user to set it in Vercel before merging the code that needs it.
+
 ## Commands
 
 | Command | What it does |
