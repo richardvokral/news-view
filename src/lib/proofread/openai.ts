@@ -14,10 +14,12 @@ export async function runOpenAI(
   opts: ProviderCallOpts
 ): Promise<ProofreadResult> {
   const client = new OpenAI({ apiKey: opts.apiKey });
+  // Note: no `temperature` — newer models (gpt-5.x, o-series) only accept the
+  // default and reject any custom value. The response shape is already pinned
+  // by response_format + the worked example in the prompt.
   const response = await client.chat.completions.create({
     model: opts.modelId,
     max_completion_tokens: 8192,
-    temperature: 0.2,
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: buildSystemMessage(opts.promptBody) },
