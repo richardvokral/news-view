@@ -423,8 +423,13 @@
         main.appendChild(change);
         if (s.explanation) main.appendChild(el("div", "ai-proofreader-expl", s.explanation));
         const pills = el("div", null);
+        const fromKorektor = typeof s.type === "string" && s.type.indexOf("(K)") >= 0;
         pills.appendChild(
-          el("span", "ai-proofreader-pill", (s.field === "title" ? "titulek" : "tělo") + " · " + (s.type || ""))
+          el(
+            "span",
+            "ai-proofreader-pill" + (fromKorektor ? " ai-proofreader-pill-k" : ""),
+            (s.field === "title" ? "titulek" : "tělo") + " · " + (s.type || "")
+          )
         );
         if (!applicable) {
           pills.appendChild(

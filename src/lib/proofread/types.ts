@@ -47,3 +47,11 @@ export interface ProofreadUserPayload {
   title: string | null;
   bodyHtml: string | null;
 }
+
+export type KorektorMode = "off" | "parallel" | "sequential";
+
+export interface KorektorConfig {
+  mode: KorektorMode;
+  endpoint: string;
+  model: string;
+}

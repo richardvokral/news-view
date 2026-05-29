@@ -39,7 +39,7 @@ export async function runAnthropic(
   const response = await client.messages.create({
     model: opts.modelId,
     max_tokens: 8192,
-    system: buildSystemMessage(opts.promptBody),
+    system: buildSystemMessage(opts.promptBody) + (opts.systemSuffix ?? ""),
     tools: [TOOL],
     tool_choice: { type: "tool", name: "submit_proofread" },
     messages: [{ role: "user", content: buildUserMessage(opts.payload) }],

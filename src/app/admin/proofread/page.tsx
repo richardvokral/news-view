@@ -17,6 +17,11 @@ const TILES = [
     desc: "Override the model or prompt for a specific user.",
   },
   {
+    href: "/admin/proofread/korektor",
+    title: "Korektor (ÚFAL)",
+    desc: "Optional Czech orthography pre-filter that runs before the LLM.",
+  },
+  {
     href: "/admin/proofread/usage",
     title: "Usage",
     desc: "Token usage and estimated cost by user and by model.",

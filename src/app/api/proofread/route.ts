@@ -5,7 +5,11 @@ import { corsJson, corsPreflight } from "@/lib/proofread/cors";
 import { resolveConfig, ProofreadConfigError } from "@/lib/proofread/router";
 import { runOpenAI } from "@/lib/proofread/openai";
 import { runAnthropic } from "@/lib/proofread/anthropic";
+import { runKorektor, mergeSuggestions } from "@/lib/proofread/korektor";
+import type { KorektorResult } from "@/lib/proofread/korektor";
+import { buildKorektorHint } from "@/lib/proofread/prompts";
 import { estimateCost, recordUsage } from "@/lib/proofread/usage";
+import type { ProofreadResult } from "@/lib/proofread/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -52,7 +56,7 @@ export async function POST(req: NextRequest) {
         : "Konfigurace korektury selhala.";
     return corsJson({ error: message }, 503);
   }
-  const { model, prompt, mode } = resolved;
+  const { model, prompt, mode, korektor } = resolved;
 
   const config = await getApiConfig();
   const apiKey =
@@ -67,31 +71,69 @@ export async function POST(req: NextRequest) {
   }
 
   const payload = { mode, title, bodyHtml };
-  try {
-    const result =
-      model.provider === "anthropic"
-        ? await runAnthropic({
-            modelId: model.modelId,
-            promptBody: prompt.body,
-            payload,
-            apiKey,
-          })
-        : await runOpenAI({
-            modelId: model.modelId,
-            promptBody: prompt.body,
-            payload,
-            apiKey,
-          });
+  const korektorEnabled = korektor.mode !== "off";
 
-    const cost = estimateCost(model, result.inputTokens, result.outputTokens);
+  // Korektor never blocks the LLM: a remote failure yields empty suggestions
+  // plus a warning, and we proceed with the LLM alone.
+  let korektorResult: KorektorResult = {
+    suggestions: [],
+    acknowledgements: [],
+    inputChars,
+  };
+  let korektorError: string | null = null;
+  async function safeKorektor() {
+    if (!korektorEnabled) return;
+    try {
+      korektorResult = await runKorektor({
+        endpoint: korektor.endpoint,
+        model: korektor.model,
+        title,
+        bodyHtml,
+      });
+    } catch (e) {
+      korektorError = e instanceof Error ? e.message : "Korektor selhal.";
+    }
+  }
+
+  function runLLM(systemSuffix?: string): Promise<ProofreadResult> {
+    const opts = {
+      modelId: model.modelId,
+      promptBody: prompt.body,
+      payload,
+      apiKey: apiKey as string,
+      systemSuffix,
+    };
+    return model.provider === "anthropic" ? runAnthropic(opts) : runOpenAI(opts);
+  }
+
+  try {
+    let llmResult: ProofreadResult;
+    if (korektor.mode === "sequential") {
+      await safeKorektor();
+      llmResult = await runLLM(buildKorektorHint(korektorResult.suggestions));
+    } else if (korektor.mode === "parallel") {
+      const [, r] = await Promise.all([safeKorektor(), runLLM()]);
+      llmResult = r;
+    } else {
+      llmResult = await runLLM();
+    }
+
+    const suggestions = korektorEnabled
+      ? mergeSuggestions(korektorResult.suggestions, llmResult.suggestions)
+      : llmResult.suggestions;
+
+    const warnings = [...llmResult.warnings];
+    if (korektorError) warnings.push(`Korektor nedostupný: ${korektorError}`);
+
+    const cost = estimateCost(model, llmResult.inputTokens, llmResult.outputTokens);
     await recordUsage({
       email,
       provider: model.provider,
       modelId: model.modelId,
       modelKey: model.key,
       mode,
-      inputTokens: result.inputTokens,
-      outputTokens: result.outputTokens,
+      inputTokens: llmResult.inputTokens,
+      outputTokens: llmResult.outputTokens,
       costUsd: cost.usd,
       costCzk: cost.czk,
       status: "ok",
@@ -99,18 +141,40 @@ export async function POST(req: NextRequest) {
       sourceUrl,
       inputChars,
     });
+    if (korektorEnabled) {
+      await recordUsage({
+        email,
+        provider: "korektor",
+        modelId: korektor.model,
+        modelKey: null,
+        mode,
+        inputTokens: 0,
+        outputTokens: 0,
+        costUsd: 0,
+        costCzk: 0,
+        status: korektorError ? "error" : "ok",
+        articleId,
+        sourceUrl,
+        inputChars: korektorResult.inputChars,
+      }).catch(() => {});
+    }
 
     return corsJson({
-      suggestions: result.suggestions,
-      summary: result.summary,
-      warnings: result.warnings,
+      suggestions,
+      summary: llmResult.summary,
+      warnings,
       mode,
+      korektor: {
+        mode: korektor.mode,
+        count: korektorResult.suggestions.length,
+        acknowledgements: korektorResult.acknowledgements,
+      },
       usage: {
         provider: model.provider,
         model: model.modelId,
         modelLabel: model.label,
-        inputTokens: result.inputTokens,
-        outputTokens: result.outputTokens,
+        inputTokens: llmResult.inputTokens,
+        outputTokens: llmResult.outputTokens,
         costUsd: cost.usd,
         costCzk: cost.czk,
       },

@@ -320,6 +320,11 @@
   background: #fef3c7;
 }
 
+.ai-proofreader-pill-k {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
 .ai-proofreader-suggestion-bad {
   opacity: 0.65;
 }

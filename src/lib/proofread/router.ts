@@ -4,8 +4,13 @@ import {
   getPrompt,
   getDefaultMode,
   getUserConfig,
+  getKorektorConfig,
 } from "./store";
-import type { ProofreadModel, ProofreadPrompt } from "./types";
+import type {
+  KorektorConfig,
+  ProofreadModel,
+  ProofreadPrompt,
+} from "./types";
 
 export class ProofreadConfigError extends Error {}
 
@@ -13,6 +18,7 @@ export interface ResolvedConfig {
   model: ProofreadModel;
   prompt: ProofreadPrompt;
   mode: string;
+  korektor: KorektorConfig;
 }
 
 /**
@@ -25,9 +31,10 @@ export async function resolveConfig(
   email: string,
   requestedMode?: string
 ): Promise<ResolvedConfig> {
-  const [models, userCfg] = await Promise.all([
+  const [models, userCfg, korektor] = await Promise.all([
     listModels(),
     getUserConfig(email),
+    getKorektorConfig(),
   ]);
   const enabled = models.filter((m) => m.enabled);
   if (enabled.length === 0) {
@@ -62,5 +69,5 @@ export async function resolveConfig(
     prompt = { ...prompt, body: userCfg.promptOverride.trim() };
   }
 
-  return { model, prompt, mode };
+  return { model, prompt, mode, korektor };
 }

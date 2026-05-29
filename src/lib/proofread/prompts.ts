@@ -1,4 +1,4 @@
-import type { ProofreadUserPayload } from "./types";
+import type { ProofreadUserPayload, Suggestion } from "./types";
 
 const OUTPUT_CONTRACT = `Odpověď MUSÍ být POUZE JSON objekt s těmito poli (žádný jiný text před ani za):
 - "suggestions": pole JSON objektů; KAŽDÁ chyba = JEDNA položka, žádné slučování. Použito vždy když je nalezena chyba nebo návrh.
@@ -28,6 +28,17 @@ PŘÍKLAD JSON ODPOVĚDI:
 
 export function buildSystemMessage(promptBody: string): string {
   return `${promptBody.trim()}\n\n${OUTPUT_CONTRACT}`;
+}
+
+/** Sequential mode: tell the LLM which fixes Korektor already found so it can
+ *  skip them and focus on punctuation / grammar / style. */
+export function buildKorektorHint(korektor: Suggestion[]): string {
+  if (korektor.length === 0) return "";
+  const lines = korektor
+    .slice(0, 100)
+    .map((s) => `- "${s.original}" → "${s.replacement}"`)
+    .join("\n");
+  return `\n\nNástroj Korektor už našel tyto pravopisné opravy (NEopakuj je ve svých "suggestions", soustřeď se na interpunkci, gramatiku a styl):\n${lines}`;
 }
 
 export function buildUserMessage(payload: ProofreadUserPayload): string {

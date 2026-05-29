@@ -1,5 +1,7 @@
 import { getDb, hasDb } from "@/lib/db";
 import type {
+  KorektorConfig,
+  KorektorMode,
   ProofreadModel,
   ProofreadPrompt,
   ProofreadUserConfig,
@@ -116,6 +118,61 @@ export async function setDefaultModelKey(
        updated_by = EXCLUDED.updated_by,
        updated_at = NOW()`,
     [key, email]
+  );
+}
+
+// ---- Korektor config (Stage 2) --------------------------------------------
+
+const DEFAULT_KOREKTOR: KorektorConfig = {
+  mode: "off",
+  endpoint: "https://lindat.mff.cuni.cz/services/korektor/api",
+  model: "czech-spellchecker",
+};
+
+function toKorektorMode(value: unknown): KorektorMode {
+  return value === "parallel" || value === "sequential" ? value : "off";
+}
+
+export async function getKorektorConfig(): Promise<KorektorConfig> {
+  if (!hasDb()) return { ...DEFAULT_KOREKTOR };
+  const { rows } = await getDb().query<{
+    korektor_mode: string | null;
+    korektor_endpoint: string | null;
+    korektor_model: string | null;
+  }>(
+    `SELECT korektor_mode, korektor_endpoint, korektor_model
+       FROM proofread_settings WHERE id = 1`
+  );
+  if (rows.length === 0) return { ...DEFAULT_KOREKTOR };
+  return {
+    mode: toKorektorMode(rows[0].korektor_mode),
+    endpoint: rows[0].korektor_endpoint?.trim() || DEFAULT_KOREKTOR.endpoint,
+    model: rows[0].korektor_model?.trim() || DEFAULT_KOREKTOR.model,
+  };
+}
+
+export async function setKorektorConfig(
+  email: string,
+  cfg: KorektorConfig
+): Promise<void> {
+  if (!hasDb()) throw new Error("Database not configured");
+  const endpoint = cfg.endpoint.trim().replace(/\/+$/, "");
+  if (!/^https?:\/\//i.test(endpoint)) {
+    throw new Error("Endpoint must be an http(s) URL");
+  }
+  const model = cfg.model.trim();
+  if (!model) throw new Error("Model required");
+  await getDb().query(
+    `INSERT INTO proofread_settings
+       (id, korektor_mode, korektor_endpoint, korektor_model, updated_by, updated_at)
+     VALUES (1, $1, $2, $3, $4, NOW())
+     ON CONFLICT (id) DO UPDATE SET
+       korektor_mode = EXCLUDED.korektor_mode,
+       korektor_endpoint = EXCLUDED.korektor_endpoint,
+       korektor_model = EXCLUDED.korektor_model,
+       updated_by = EXCLUDED.updated_by,
+       updated_at = NOW()`,
+    [toKorektorMode(cfg.mode), endpoint, model, email]
   );
 }
 

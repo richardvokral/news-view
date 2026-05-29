@@ -8,6 +8,8 @@ export interface ProviderCallOpts {
   promptBody: string;
   payload: ProofreadUserPayload;
   apiKey: string;
+  /** Extra system text appended after the contract (e.g. Korektor hint). */
+  systemSuffix?: string;
 }
 
 export async function runOpenAI(
@@ -22,7 +24,10 @@ export async function runOpenAI(
     max_completion_tokens: 8192,
     response_format: { type: "json_object" },
     messages: [
-      { role: "system", content: buildSystemMessage(opts.promptBody) },
+      {
+        role: "system",
+        content: buildSystemMessage(opts.promptBody) + (opts.systemSuffix ?? ""),
+      },
       { role: "user", content: buildUserMessage(opts.payload) },
     ],
   });

@@ -286,6 +286,17 @@ CREATE TABLE IF NOT EXISTS proofread_settings (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Stage 2: Korektor (ÚFAL) pre-filter config. korektor_mode is off by default;
+-- commercial use of the hosted API / CC BY-NC-SA models requires a written
+-- agreement with ÚFAL. The same endpoint URL supports hosted or self-hosted.
+ALTER TABLE proofread_settings
+  ADD COLUMN IF NOT EXISTS korektor_mode TEXT NOT NULL DEFAULT 'off'
+    CHECK (korektor_mode IN ('off','parallel','sequential')),
+  ADD COLUMN IF NOT EXISTS korektor_endpoint TEXT NOT NULL
+    DEFAULT 'https://lindat.mff.cuni.cz/services/korektor/api',
+  ADD COLUMN IF NOT EXISTS korektor_model TEXT NOT NULL
+    DEFAULT 'czech-spellchecker';
+
 -- Per-request usage log. NEVER stores article text, only counts and ids.
 CREATE TABLE IF NOT EXISTS proofread_usage (
   id BIGSERIAL PRIMARY KEY,
