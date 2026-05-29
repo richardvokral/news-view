@@ -31,6 +31,11 @@ const TILES = [
     title: "AI Proofreading",
     desc: "Models, prompts, per-user config and usage for the Czech proofreader.",
   },
+  {
+    href: "/admin/database",
+    title: "Database",
+    desc: "Run schema migrations after a deploy that adds new tables or columns.",
+  },
 ];
 
 export default function AdminHome() {
