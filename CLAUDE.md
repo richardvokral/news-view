@@ -2,6 +2,19 @@
 
 Working notes for Claude Code (and humans skimming the repo). Keep the README short and put long-form context here. Update this file whenever architecture, conventions, or operational details change.
 
+## Documentation map
+
+Long-form docs live in `docs/`; this file stays the working-notes index. When you change a subsystem, update its doc; when you ship something notable, add an entry to `docs/updates.md`.
+
+- `docs/architecture.md` — system overview, layering rules, docs map.
+- `docs/vision.md` — product vision and roadmap priorities.
+- `docs/updates.md` — human-readable changelog (newest first; one entry per shipment, not per commit).
+- `docs/article-monitor.md` — monitor pipeline internals + runbook.
+- `docs/news-pipeline.md` — fetchers, clustering, /news, /reports, /analyze.
+- `docs/proofread.md` — proofread backend + Chrome extension.
+- `docs/auth-and-admin.md` — auth/ACL, DB/Redis, cron, env vars.
+- `docs/plans/` — product design docs; `article-insights-providers.md` is the active one (analytics-provider abstraction for the monitor).
+
 ## Project overview
 
 `news-view` is an internal newsroom tool for Echo Media. It ingests articles from news APIs and RSS, clusters them into topics, surfaces editorial reports, and tracks per-article traffic from Plausible. A companion Chrome extension calls the proofread API to AI-edit Czech copy directly in the CMS.
@@ -95,7 +108,7 @@ MV3 extension loaded unpacked. Communicates with this app over HTTPS using a bea
 
 - **First boot**: sign in as an `ADMIN_EMAILS` user, then `POST /api/admin/migrate` to create tables.
 - **Cron**: configured in Upstash QStash, hitting `/api/cron/*` with `Authorization: Bearer $CRON_SECRET`. See `docs/article-monitor.md` for the article monitor runbook.
-- **Vercel**: project deploys from `main`. `.vercelignore` excludes the `extension/` folder. `vercel.json` is intentionally minimal.
+- **Vercel**: project auto-deploys from the default branch (currently `claude/news-aggregator-tool-HvXDC` — see Workflow above), not `main`. `.vercelignore` excludes the `extension/` folder. `vercel.json` is intentionally minimal.
 - **Local Plausible**: not required — the monitor will simply record 0s if the Plausible call fails; other features run independently.
 
 ## Where to look first

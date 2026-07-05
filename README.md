@@ -43,7 +43,15 @@ src/components/  feature-scoped React components
 src/lib/         server logic: fetchers, clustering, storage, auth, monitor, proofread
 src/middleware.ts  Logto session gate for protected routes
 extension/       Chrome MV3 proofreading extension (loaded unpacked)
-docs/            feature runbooks
+docs/            architecture, per-feature docs, vision, plans, changelog
 ```
 
-More detail and conventions for contributors live in [`CLAUDE.md`](CLAUDE.md).
+## Documentation
+
+- [`docs/architecture.md`](docs/architecture.md) — system overview and docs map
+- [`docs/vision.md`](docs/vision.md) — product vision and roadmap
+- [`docs/updates.md`](docs/updates.md) — change log
+- [`docs/article-monitor.md`](docs/article-monitor.md), [`docs/news-pipeline.md`](docs/news-pipeline.md), [`docs/proofread.md`](docs/proofread.md), [`docs/auth-and-admin.md`](docs/auth-and-admin.md) — subsystem deep dives
+- [`docs/plans/article-insights-providers.md`](docs/plans/article-insights-providers.md) — design: analytics-provider-agnostic article insights
+
+Conventions for contributors live in [`CLAUDE.md`](CLAUDE.md).
