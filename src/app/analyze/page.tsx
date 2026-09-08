@@ -10,6 +10,7 @@ interface PageProps {
 export default async function AnalyzePage({ searchParams }: PageProps) {
   const session = await getSession();
   if (!session.email) redirect("/api/logto/sign-in");
+  if (!session.sections.includes("reports")) redirect("/no-access");
 
   const sites = listSiteIds();
   const params = await searchParams;

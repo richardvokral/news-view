@@ -3,6 +3,7 @@ import { getArticles, getLastFetchTime } from "@/lib/storage/articles";
 import { getApiConfig } from "@/lib/storage/settings";
 import { getClusteringStrategy } from "@/lib/clustering";
 import { getRedis } from "@/lib/redis";
+import { getSession } from "@/lib/auth";
 import { Topic } from "@/lib/fetchers/types";
 
 export const dynamic = "force-dynamic";
@@ -19,11 +20,21 @@ interface CachedTopics {
 }
 
 export async function GET(request: NextRequest) {
+  // This route was unauthenticated, and `?refresh=1` re-runs clustering —
+  // which in `ai`/`hybrid` mode is a paid LLM call anyone could trigger.
+  const session = await getSession();
+  if (!session.email || !session.sections.includes("news")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const excludeCategories = searchParams.get("exclude")?.split(",").filter(Boolean) ?? [];
-    const days = parseInt(searchParams.get("days") ?? "3", 10);
-    const forceRefresh = searchParams.get("refresh") === "1";
+    const rawDays = parseInt(searchParams.get("days") ?? "3", 10);
+    const days = Number.isFinite(rawDays) ? Math.min(Math.max(rawDays, 1), 30) : 3;
+    // Forcing a re-cluster costs money; the cached path stays open to any
+    // news user, the refresh path is admin-only.
+    const forceRefresh = searchParams.get("refresh") === "1" && session.isAdmin;
 
     const config = await getApiConfig();
     const lastFetch = await getLastFetchTime();

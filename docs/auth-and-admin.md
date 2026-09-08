@@ -2,8 +2,8 @@
 
 ## Auth layers (three, from coarse to fine)
 
-1. **Edge middleware** (`src/middleware.ts`) — presence check only. On protected prefixes (`/reports`, `/monitor`, `/admin`, `/api/admin`, `/api/plausible`, `/api/dashboard-layout`, `/api/monitor`, `/no-access`) it checks that the `logto_<LOGTO_APP_ID>` cookie *exists* and redirects to `/api/logto/sign-in` if not. `/api/logto` and `/api/cron` are explicit public exceptions. It does **not** validate the session or check sections — never rely on middleware for authorization.
-2. **Session** (`src/lib/logto.ts`, re-exported via `src/lib/auth.ts`) — `getSession()` returns `{email, isAdmin, sections}`. Email from Logto userinfo/claims (lowercased). Fail-closed: any Logto error yields an anonymous session.
+1. **Edge middleware** (`src/middleware.ts`) — presence check only. On protected prefixes (`/reports`, `/monitor`, `/news`, `/analyze`, `/admin`, `/api/admin`, `/api/plausible`, `/api/dashboard-layout`, `/api/monitor`, `/no-access`) it checks that the `logto_<LOGTO_APP_ID>` cookie *exists* and redirects to `/api/logto/sign-in` if not. `/api/logto` and `/api/cron` are explicit public exceptions. It does **not** validate the session or check sections — a forged cookie of any value passes it, so **never rely on middleware for authorization**. Every protected route handler and page carries its own check.
+2. **Session** (`src/lib/logto.ts`, re-exported via `src/lib/auth.ts`) — `getSession()` returns `{email, isAdmin, sections}`, and requires `ctx.isAuthenticated`. Email from Logto userinfo/claims (lowercased). Fail-closed: any Logto error yields an anonymous session. `getSession({fromClaimsOnly: true})` reads the email from the verified ID-token claims and skips the `/userinfo` HTTP round-trip — same trust level (the cookie is decrypted and verified either way), used on `/api/plausible`, which a dashboard render hits 10+ times. If the session is authenticated but carries no email claim, it retries with `/userinfo` rather than denying, so a tenant that omits the claim degrades to slower, not broken.
 3. **ACL** (`src/lib/access.ts`) — `resolveSections(email)` precedence:
    1. `ADMIN_EMAILS` member (env, semicolon-separated, never stored in DB) → all sections + `isAdmin`.
    2. Exact `access_users` row → its sections. **An existing row with an empty array is an explicit deny** — it overrides domain rules.
@@ -14,7 +14,9 @@ Sections are `"reports" | "news" | "monitor"` (`ALL_SECTIONS` in `src/types/dash
 
 The root page `/` redirects: no email → sign-in; `reports` → `/reports`; else `news` → `/news`; else `/no-access`. ⚠️ A monitor-only user lands on `/no-access` from the root but can navigate to `/monitor` directly.
 
-The Chrome extension uses a separate bearer-token path (see `docs/proofread.md`), and there's a legacy password login at `POST /api/auth` (`SETTINGS_PASSWORD`, timing-safe, IP lockout via `auth:fail:<ip>`/`auth:lock:<ip>`) that is being phased out.
+`/analyze` and `POST /api/analyze` take the **`reports`** grant — they read the same Plausible data through the same key, and the agent loop spends Anthropic tokens.
+
+The Chrome extension uses a separate bearer-token path (see `docs/proofread.md`). Logto is otherwise the only way in; the legacy `SETTINGS_PASSWORD` login at `POST /api/auth` has been removed (nothing read the `settings_auth` cookie it set).
 
 ## Database (Neon Postgres)
 
@@ -33,7 +35,8 @@ Single ioredis client (`src/lib/redis.ts`), env `STORAGE_REDIS_REDIS_URL` (note 
 | `cache:topics` | Clustered-topics cache, 1h TTL. |
 | `monitor:requests:<YYYY-MM-DDTHH>` | Monitor's hourly Plausible budget counter. |
 | `gnews:requests:<YYYY-MM-DD>` | GNews daily quota counter (cap 90). |
-| `auth:fail:<ip>` / `auth:lock:<ip>` | Legacy login brute-force guard (15 min). |
+| `ratelimit:extlogin:ip:<ip>` / `ratelimit:extlogin:email:<email>` | Extension-login throttle (10/15 min per IP, 5/h per e-mail). |
+| `ratelimit:proofread:<email>` | Proofread cap (60 requests/h per user). |
 
 **Settings-override convention** (`src/lib/storage/settings.ts`): feature settings = Redis value if set, else env default (`applyEnvDefaults`). Route handlers read `process.env` directly only for secrets/infra (DB, Logto, QStash, Plausible). `/api/settings` masks keys as `****`+last4 and treats masked values as "unchanged" on save.
 
@@ -54,26 +57,35 @@ Diagnostics: `GET /api/dump` (admin) dumps Redis articles + masked config + quot
 
 ## Cron (Upstash QStash + one Vercel cron)
 
-All under `/api/cron/*`, public in middleware, self-authenticated:
+All under `/api/cron/*`, public in middleware, self-authenticated through one shared gate (`src/lib/cron-auth.ts`): `Authorization: Bearer $CRON_SECRET` or `?secret=$CRON_SECRET`, compared in constant time, **failing closed when `CRON_SECRET` is unset**. Prefer the header — the query form leaks the secret into access logs.
 
-| Endpoint | Auth | Guard | Does |
-| --- | --- | --- | --- |
-| `fetch-news` | Bearer `CRON_SECRET` **or** `upstash-signature` header presence; **open if secret unset** | Redis mutex `fetch:lock` (60s) | Fetch + store + prune articles. Scheduled daily in `vercel.json` (`0 0 * * *`). |
-| `article-monitor` | Bearer or `?secret=`; rejects all if secret unset | Hourly rate counter | Monitor tick (see `docs/article-monitor.md`). QStash, every ~5 min. |
-| `coverage` | same | ⚠️ none — overlapping triggers can double-run | External RSS ingest + AI coverage analysis. |
+| Endpoint | Guard | Does |
+| --- | --- | --- |
+| `fetch-news` | Redis mutex `fetch:lock` (60s) | Fetch + store + prune articles. Scheduled daily in `vercel.json` (`0 0 * * *`). |
+| `article-monitor` | Hourly rate counter | Monitor tick (see `docs/article-monitor.md`). QStash, every ~5 min. |
+| `coverage` | ⚠️ none — overlapping triggers can double-run | External RSS ingest + AI coverage analysis. |
+
+The ingestion run itself lives in `src/lib/news-fetch.ts` so the signed-in "Fetch Now" button can call it through `POST /api/news/fetch` (`news` section) without the cron endpoint having to be reachable unauthenticated.
+
+⚠️ **`CRON_SECRET` must be set in Vercel.** It previously wasn't required, and `fetch-news` ran for anyone who asked; now an unset secret means the crons return 401 and ingestion silently stops.
 
 ## Env vars
 
 From `.env.example`: `DATABASE_URL`, `STORAGE_REDIS_REDIS_URL`, `QSTASH_TOKEN`, `QSTASH_CURRENT_SIGNING_KEY`, `QSTASH_NEXT_SIGNING_KEY`, `WORLDNEWSAPI_KEY`, `NEWSDATAHUB_KEY`, `GNEWS_KEY`, `TWITTER_BEARER_TOKEN`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `CRON_SECRET`, `LOGTO_ENDPOINT`, `LOGTO_APP_ID`, `LOGTO_APP_SECRET`, `LOGTO_COOKIE_SECRET`, `LOGTO_BASE_URL`, `ADMIN_EMAILS`, `PLAUSIBLE_API_URL`, `PLAUSIBLE_API_KEY`, `PLAUSIBLE_SITE_IDS`.
 
-Used in code but optional: `PLAUSIBLE_SITE_BASEURLS` (site id → base URL map), `SCRAPE_DO_TOKEN` (Google Trends fallback proxy), `USD_TO_CZK` (proofread cost display, default 23), `SETTINGS_PASSWORD` (legacy login, being phased out).
+Used in code but optional: `PLAUSIBLE_SITE_BASEURLS` (site id → base URL map), `SCRAPE_DO_TOKEN` (Google Trends fallback proxy), `USD_TO_CZK` (proofread cost display, default 23), `EXTENSION_LOGIN_SECRET` (shared enrolment code for the extension — see `docs/proofread.md`).
 
 Secrets live in the Vercel dashboard; adding one means updating `.env.example` *and* setting it in Vercel before the code lands.
 
+## Response headers
+
+`next.config.ts` sets `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` + `Content-Security-Policy: frame-ancestors 'none'`, `Referrer-Policy: strict-origin-when-cross-origin`, a `Permissions-Policy` denying camera/mic/geolocation, and `X-Robots-Tag: noindex, nofollow` on every response. There is deliberately **no script/style CSP**: the App Router's inline bootstrap needs a per-request nonce, which isn't wired up here.
+
 ## Known inconsistencies / gotchas
 
-- `fetch-news` fails open without `CRON_SECRET`; the other two crons fail closed.
-- The `upstash-signature` header on `fetch-news` is checked for presence only, not verified against the QStash signing keys.
+- The extension login is still e-mail-only unless `EXTENSION_LOGIN_SECRET` is set — see `docs/proofread.md`. Set it.
 - `coverage` cron has no overlap lock.
-- The `/news` "Fetch Now" button calls `fetch-news` without credentials — it only works because `/api/cron` is a middleware exception and (currently) the secret check passes; revisit if `CRON_SECRET` handling changes.
+- The cron gate accepts `?secret=`, which ends up in access logs. Use the `Authorization` header where the scheduler allows it.
+- Rate limits (`src/lib/rate-limit.ts`) are fixed-window and **fail open** if Redis is unreachable — deliberate, since Redis is on every hot path, but it means they are a speed bump, not a hard cap.
 - `articles` table has no retention job (Redis is pruned to 3 days, Postgres grows).
+- ACL is re-read from Postgres on every request (no caching), so revoking a grant takes effect immediately — including for extension bearer tokens.

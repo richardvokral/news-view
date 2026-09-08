@@ -55,10 +55,10 @@ There is no test runner wired up yet. Lint + a successful `next build` is the ba
 ### Routes (`src/app`)
 
 - `/` — redirects authenticated users into the first section they have access to (`reports` → `news` → `no-access`).
-- `/news`, `/reports`, `/analyze`, `/monitor` — feature surfaces.
+- `/news`, `/reports`, `/analyze`, `/monitor` — feature surfaces. `/analyze` takes the `reports` grant (same Plausible data, same API key).
 - `/admin/*` — user & domain ACL, per-feature settings, defaults, monitor config, proofread admin.
 - `/no-access` — shown when a signed-in user has no section grants.
-- `/api/*` — server actions / route handlers. Subtree mirrors features (`api/monitor`, `api/proofread`, `api/admin`, `api/cron`, etc.). `api/logto/*` and `api/cron/*` are intentionally public; everything else under a protected prefix requires a Logto session (see middleware).
+- `/api/*` — server actions / route handlers. Subtree mirrors features (`api/monitor`, `api/proofread`, `api/admin`, `api/cron`, etc.). `api/logto/*` is public; `api/cron/*` is cookie-exempt but authenticates with `CRON_SECRET` (fails closed). **Every other handler does its own `getSession()` + section check** — middleware is not authorization.
 - `/api/extension/*` — bearer-token auth for the Chrome extension (no Logto cookie).
 
 ### Server libs (`src/lib`)
@@ -78,7 +78,7 @@ There is no test runner wired up yet. Lint + a successful `next build` is the ba
 
 ### Middleware (`src/middleware.ts`)
 
-Gate-only: checks for a `logto_<APP_ID>` cookie on protected prefixes (`/reports`, `/monitor`, `/admin`, `/api/admin`, `/api/plausible`, `/api/dashboard-layout`, `/api/monitor`, `/no-access`) and redirects to `/api/logto/sign-in` if missing. Fine-grained ACL (per-section, per-domain) happens in route handlers via `src/lib/access.ts` — do not rely on middleware for authorization.
+Gate-only: checks that a `logto_<APP_ID>` cookie *exists* on protected prefixes (`/reports`, `/monitor`, `/news`, `/analyze`, `/admin`, `/api/admin`, `/api/plausible`, `/api/dashboard-layout`, `/api/monitor`, `/no-access`) and redirects to `/api/logto/sign-in` if missing. It never validates the cookie, so a forged one passes — it is a redirect convenience for pages, nothing more. Fine-grained ACL (per-section, per-domain) happens in route handlers via `src/lib/access.ts`; **do not rely on middleware for authorization**, and note that Next has shipped several middleware-bypass advisories, so a route whose only gate is middleware is a route with no gate.
 
 ### Chrome extension (`extension/`)
 
@@ -89,10 +89,11 @@ MV3 extension loaded unpacked. Communicates with this app over HTTPS using a bea
 - **Neon Postgres** (`DATABASE_URL`) — articles, monitors, ACL, dashboard layouts. Schema: `src/lib/db-schema.sql`. Migrate via `POST /api/admin/migrate` as an admin.
 - **Redis** (`STORAGE_REDIS_REDIS_URL`) — caches, settings overrides, rate limits, cron locks.
 - **Logto** (`LOGTO_*`) — OIDC. `ADMIN_EMAILS` (semicolon-separated) bypasses DB ACL and is never persisted.
-- **Upstash QStash** (`QSTASH_*`) — schedules `/api/cron/*` endpoints (article monitor, ingestion). Endpoints validate `Authorization: Bearer $CRON_SECRET`.
+- **Upstash QStash** (`QSTASH_*`) — schedules `/api/cron/*` endpoints (article monitor, ingestion). Endpoints validate `Authorization: Bearer $CRON_SECRET` (or `?secret=`, which leaks into access logs) through `src/lib/cron-auth.ts` and **reject everything when `CRON_SECRET` is unset** — so it must be set in Vercel or ingestion and the monitor silently stop.
 - **Plausible** (`PLAUSIBLE_API_URL`, `PLAUSIBLE_API_KEY`, `PLAUSIBLE_SITE_IDS`) — pageview source.
 - **News APIs** (`WORLDNEWSAPI_KEY`, `NEWSDATAHUB_KEY`, `GNEWS_KEY`, `TWITTER_BEARER_TOKEN`) — optional, configurable at runtime via `/admin/settings`.
 - **AI** (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) — clustering, analyze, proofread. Either provider is fine; the proofread router picks based on settings.
+- **Extension enrolment** (`EXTENSION_LOGIN_SECRET`, optional) — shared code required by `/api/extension/login` when set. Leave it unset and the endpoint is e-mail-only: knowing a granted address is enough to mint a 30-day token to the paid proofread API. Set it.
 
 ## Conventions
 
@@ -100,7 +101,9 @@ MV3 extension loaded unpacked. Communicates with this app over HTTPS using a bea
 - Server-only code lives in `src/lib`; never import it from a `"use client"` component.
 - Feature-scoped UI lives in `src/components/<feature>/`; shared chrome (e.g. `TopNav`) at the top level.
 - API routes return JSON with a stable shape; errors as `{ error: string }` with a sensible HTTP status. Cron endpoints return `{ skippedReason?: string, ... }` (see `docs/article-monitor.md`).
-- Auth: call `getSession()` from `src/lib/auth.ts`; check `session.sections.includes("<feature>")` before serving feature data. Admin-only endpoints additionally check `ADMIN_EMAILS`.
+- Auth: call `getSession()` from `src/lib/auth.ts`; check `session.sections.includes("<feature>")` before serving feature data. Admin-only endpoints additionally check `ADMIN_EMAILS`. On a route hit many times per render, `getSession({fromClaimsOnly: true})` skips the Logto `/userinfo` call without weakening the check.
+- Anything that spends money on someone else's behalf (LLM calls, paid news APIs, Plausible quota) needs both an ACL check and a limit: `src/lib/rate-limit.ts` for per-user/per-IP caps, an input-size ceiling for LLM payloads, admin-only for "force a re-run" switches.
+- Response headers (HSTS, nosniff, frame-ancestors, referrer, permissions, noindex) live in `next.config.ts`. There's no script CSP — the App Router's inline bootstrap would need per-request nonces.
 - Settings: read via `src/lib/storage/settings.ts` so env-var defaults and Redis overrides stay in one place. Don't read `process.env` directly from route handlers for feature settings — only for secrets/infra (DB URL, Logto, QStash).
 - Tailwind v4 via `@tailwindcss/postcss`. Keep styles in JSX; no per-file `.module.css` unless you have a specific reason.
 
@@ -117,8 +120,9 @@ MV3 extension loaded unpacked. Communicates with this app over HTTPS using a bea
 - Changing clustering behavior → `src/lib/clustering/hybrid-clustering.ts` is the entry point.
 - Changing what shows on `/monitor` → `src/lib/monitor/pipeline.ts` and `src/app/monitor/page.tsx`; runbook in `docs/article-monitor.md`.
 - Proofread prompt or model tweaks → `src/lib/proofread/prompts.ts` and `router.ts`.
-- New protected route → add the prefix to `PROTECTED_PREFIXES` **and** the `matcher` in `src/middleware.ts`, then enforce section ACL inside the handler.
+- New protected route → enforce section ACL inside the handler first (that's the actual gate); for a *page*, also add the prefix to `PROTECTED_PREFIXES` **and** the `matcher` in `src/middleware.ts` so signed-out users get redirected instead of a broken render.
 - New DB table → append to `src/lib/db-schema.sql` (statements must be idempotent) and re-run `/api/admin/migrate`.
+- Rate limiting / client IP → `src/lib/rate-limit.ts`. Cron auth → `src/lib/cron-auth.ts`.
 
 ## Gotchas
 
@@ -126,6 +130,8 @@ MV3 extension loaded unpacked. Communicates with this app over HTTPS using a bea
 - Plausible visitors are cumulative-since-midnight; the monitor sparkline therefore "drops" at the day boundary by design.
 - The Chrome extension defaults its backend to `https://news-view.vercel.app`. For local testing, point it to `http://localhost:3000` in **Nastavení serveru**.
 - `ADMIN_EMAILS` is read fresh on every request; rotating it does not require a redeploy if you change it in Vercel env, but a redeploy is still needed for it to apply (env is baked at build for non-edge).
+- Rate limits fail **open** when Redis is unreachable (by design — Redis is on every hot path), so they're a speed bump, not a hard cap.
+- `eslint-config-next` 16.3 enabled the React Compiler rules. The reports widgets fetch inside effects and trip `react-hooks/set-state-in-effect`; those files are demoted to warnings in `eslint.config.mjs` so the lint gate still bites for new code. The widgets want a real data-fetching refactor.
 
 ## Updating this file
 

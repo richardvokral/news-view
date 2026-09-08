@@ -7,7 +7,7 @@ AI-assisted Czech copy editing inside the CMS. A Chrome/Edge MV3 extension (`ext
 1. Editor clicks the floating **AI korektura** button in the CMS (`extension/content.js`, injected on `cms.echomedia.cz`).
 2. The content script reads the title input and the CKEditor body (via `bridge.js`, which runs in the page JS world to reach `window.CKEDITOR`), and posts `{mode, articleId, sourceUrl, fields: {title?, bodyHtml?}}` through the background service worker (which holds the bearer token) to `POST /api/proofread`.
 3. The route (`src/app/api/proofread/route.ts`, `maxDuration=300`):
-   - Authenticates the bearer token (`requireExtensionUser`) and **re-checks ACL sections on every request** — revoking a user's access kills their token immediately.
+   - Authenticates the bearer token (`requireExtensionUser`) and **re-checks ACL sections on every request** — revoking a user's access kills their token immediately — then applies the per-user hourly rate limit and the input-size cap.
    - Resolves config via `src/lib/proofread/router.ts`: mode → prompt (requested mode if it exists, else default mode); model → per-user override → system default → first enabled model.
    - Optionally runs the **Korektor (ÚFAL) pre-filter** (`korektor.ts`) per `proofread_settings.korektor_mode`: `sequential` (Korektor first, its fixes passed to the LLM as "don't repeat these" via `buildKorektorHint`), `parallel`, or `off`. Korektor failures never block the LLM — they degrade to a warning.
    - Calls the provider: `anthropic.ts` (forced tool-use `submit_proofread` for structured output, `max_tokens 8192`) or `openai.ts` (Structured Outputs `json_schema strict`, falling back to `json_object` on 400; `max_completion_tokens`, **no temperature** — gpt-5/o-series reject it).
@@ -24,10 +24,13 @@ Response shape: `{suggestions[], summary, warnings[], mode, korektor: {mode, cou
 
 ## Auth (`auth.ts`)
 
-- `POST /api/extension/login` — **email-only** (password columns exist but are a future stage). Validates the email has any ACL sections (`resolveSections`), then issues a 30-day bearer token: 32 random bytes base64url, stored **only as SHA-256 hash** in `proofread_sessions`.
+- `POST /api/extension/login` — validates the e-mail has any ACL sections (`resolveSections`), then issues a 30-day bearer token: 32 random bytes base64url, stored **only as SHA-256 hash** in `proofread_sessions`.
+  - ⚠️ **Set `EXTENSION_LOGIN_SECRET`.** Without it this endpoint is e-mail-only: anyone on the internet who knows (or guesses) a granted address gets a 30-day token to a paid LLM API. With it, login also requires a shared enrolment code (constant-time compared), which editors type once into the **Přístupový kód** field in the extension sidebar. Unset = the old behaviour, so nothing breaks on deploy — but the hole stays open. The `proofread_users` password columns remain the eventual per-user answer.
+  - Rate-limited regardless: 10 attempts / 15 min per IP, 5 / h per e-mail (`src/lib/rate-limit.ts`). When the secret is configured, a wrong code and an unknown e-mail return the same message, so the endpoint can't be used to enumerate addresses.
 - `GET /api/extension/me` — bearer; returns `{email, sections}`.
+- `POST /api/proofread` — bearer; capped at 60 requests/h per user and 200 000 input characters per request, so a leaked token has a bounded cost.
 - CORS (`cors.ts`): wildcard origin is intentional — bearer auth, no cookies.
-- The extension stores `{token, email, expiresAt}` in `chrome.storage.local`; backend base URL defaults to `https://news-view.vercel.app`, overridable in the sidebar's **Nastavení serveru** (e.g. `http://localhost:3000`).
+- The extension stores `{token, email, expiresAt}` in `chrome.storage.local` (the enrolment code is never stored); backend base URL defaults to `https://news-view.vercel.app`, overridable in the sidebar's **Nastavení serveru** (e.g. `http://localhost:3000`).
 
 ## Configuration & data
 

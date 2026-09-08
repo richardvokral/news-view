@@ -35,12 +35,16 @@ async function handle(msg) {
 
     case "LOGIN": {
       const base = await getApiBase();
+      // The access code is only sent when the user typed one; it is never
+      // persisted (unlike the token, which is what later requests use).
+      const payload = { email: msg.email };
+      if (msg.secret) payload.secret = msg.secret;
       let res;
       try {
         res = await fetch(base + "/api/extension/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: msg.email }),
+          body: JSON.stringify(payload),
         });
       } catch (e) {
         return { error: "Síťová chyba: " + ((e && e.message) || e) };

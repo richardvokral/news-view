@@ -12,12 +12,20 @@ import {
   MAX_LIMIT,
   validateMetrics,
 } from "@/lib/plausible-validate";
+import { getSession } from "@/lib/auth";
 
-// Session is verified by middleware (cookie check at the edge).
-// This route is called 10+ times per dashboard render, so we skip DB-backed
-// section resolution here and rely on the middleware gate.
+// Middleware only checks that a Logto cookie *exists*, which anyone can forge,
+// so authorization has to happen here: this route proxies the Plausible API
+// with the server's key. `fromClaimsOnly` skips the /userinfo round-trip
+// (the dashboard calls this 10+ times per render) without weakening the check —
+// the session cookie is still decrypted and verified.
 
 export async function GET(request: NextRequest) {
+  const session = await getSession({ fromClaimsOnly: true });
+  if (!session.email || !session.sections.includes("reports")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const { searchParams } = request.nextUrl;
   const endpoint = searchParams.get("endpoint");
   if (!endpoint) {

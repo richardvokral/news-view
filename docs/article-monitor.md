@@ -102,7 +102,7 @@ UI: `/monitor` (`src/app/monitor/page.tsx` → `MonitorPageShell` → `MonitorDa
 1. **Migrate the DB** (once): `/admin/database` → Run migrations (or `POST /api/admin/migrate` as admin).
 2. **Grant access**: `/admin/users` or `/admin/domains`, tick the `monitor` section.
 3. **Configure** at `/admin/monitor`: enable, set per-site article regex, tune knobs above.
-4. **Schedule the cron** in Upstash QStash: `POST https://<host>/api/cron/article-monitor`, header `Authorization: Bearer $CRON_SECRET`, cadence matching `intervalSeconds` (default every 5 min). Add a second schedule for `/api/cron/coverage` if the Coverage tab is enabled (hourly is plenty).
+4. **Schedule the cron** in Upstash QStash: `POST https://<host>/api/cron/article-monitor`, header `Authorization: Bearer $CRON_SECRET`, cadence matching `intervalSeconds` (default every 5 min). Add a second schedule for `/api/cron/coverage` if the Coverage tab is enabled (hourly is plenty). `CRON_SECRET` must be set in Vercel — the cron gate fails closed without it, and a QStash signature header alone is not accepted.
 5. Wait one tick (or "Run now" at `/admin/monitor`). `/monitor` populates.
 
 ### Env vars used by this feature
@@ -117,6 +117,7 @@ UI: `/monitor` (`src/app/monitor/page.tsx` → `MonitorPageShell` → `MonitorDa
 - **RSS/Trends fetch failure**: degrades to empty results, never fails the tick.
 - **Day-boundary artifacts**: visitors are cumulative over the rolling day range; small "steps" can still appear when the range window slides. Raw values are stored and displayed as-is.
 - **No DB configured** (`hasDb()` false): all queries no-op; config falls back to `DEFAULT_MONITOR_CONFIG`.
+- **`CRON_SECRET` unset or rotated without updating QStash**: every tick returns 401 and the monitor quietly stops. Check the QStash delivery log first when `/monitor` goes stale.
 
 ## Known gaps / future work
 

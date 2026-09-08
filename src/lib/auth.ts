@@ -1,6 +1,6 @@
-// Public session helpers. Logto is the sole auth path; the password-based
-// settings_auth cookie is being phased out along with /api/auth/login.
+// Public session helpers. Logto is the sole auth path for the app itself; the
+// Chrome extension has its own bearer-token path (src/lib/proofread/auth.ts).
 export { getSession, logtoConfig } from "./logto";
-export type { Session } from "./logto";
+export type { Session, SessionOptions } from "./logto";
 export { isAdmin, resolveSections } from "./access";
 export type { Section } from "./access";

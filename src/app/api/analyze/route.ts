@@ -51,9 +51,15 @@ function sanitiseHistory(raw: unknown): HistoryMessage[] {
 }
 
 export async function POST(req: NextRequest) {
+  // Analyze runs Claude tool-use over the same Plausible data as /reports, so
+  // it takes the same grant. Checking only for a login let any signed-in user
+  // with zero section grants spend Anthropic tokens.
   const session = await getSession();
   if (!session.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!session.sections.includes("reports")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   let body: RequestBody;

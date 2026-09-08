@@ -10,9 +10,15 @@ import type { KorektorResult } from "@/lib/proofread/korektor";
 import { buildKorektorHint } from "@/lib/proofread/prompts";
 import { estimateCost, recordUsage } from "@/lib/proofread/usage";
 import type { ProofreadResult } from "@/lib/proofread/types";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
+
+// Every call is a paid LLM request, so a leaked token has a bounded blast
+// radius: this many articles per hour, and this much text per article.
+const REQUESTS_PER_HOUR = 60;
+const MAX_INPUT_CHARS = 200_000;
 
 export function OPTIONS() {
   return corsPreflight();
@@ -22,6 +28,21 @@ export async function POST(req: NextRequest) {
   const gate = await requireExtensionUser(req);
   if ("denied" in gate) return gate.denied;
   const email = gate.email;
+
+  const limited = await rateLimit(
+    `ratelimit:proofread:${email}`,
+    REQUESTS_PER_HOUR,
+    60 * 60
+  );
+  if (!limited.allowed) {
+    return corsJson(
+      {
+        error: "Překročen hodinový limit korektur. Zkuste to později.",
+        retryAfter: limited.retryAfter,
+      },
+      429
+    );
+  }
 
   let body: {
     mode?: unknown;
@@ -45,6 +66,12 @@ export async function POST(req: NextRequest) {
   const articleId = typeof body.articleId === "string" ? body.articleId : null;
   const sourceUrl = typeof body.sourceUrl === "string" ? body.sourceUrl : null;
   const inputChars = (title?.length ?? 0) + (bodyHtml?.length ?? 0);
+  if (inputChars > MAX_INPUT_CHARS) {
+    return corsJson(
+      { error: "Text je příliš dlouhý pro korekturu." },
+      413
+    );
+  }
 
   let resolved;
   try {

@@ -223,6 +223,13 @@
     input.type = "email";
     input.placeholder = "vas@email.cz";
     wrap.appendChild(input);
+    // Only needed when the backend sets EXTENSION_LOGIN_SECRET; left empty it
+    // is simply not sent, so email-only deployments are unaffected.
+    const secret = el("input", "ai-proofreader-input");
+    secret.type = "password";
+    secret.autocomplete = "off";
+    secret.placeholder = "Přístupový kód (nepovinné)";
+    wrap.appendChild(secret);
     const btn = el("button", "ai-proofreader-primary", "Přihlásit");
     btn.type = "button";
     const msg = el("div", "ai-proofreader-status");
@@ -231,7 +238,7 @@
       if (!email) return;
       btn.disabled = true;
       msg.textContent = "Přihlašuji…";
-      const resp = await bg({ type: "LOGIN", email });
+      const resp = await bg({ type: "LOGIN", email, secret: secret.value });
       btn.disabled = false;
       if (resp.error) {
         msg.className = "ai-proofreader-status ai-proofreader-error";
@@ -242,6 +249,9 @@
       render();
     });
     input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") btn.click();
+    });
+    secret.addEventListener("keydown", (e) => {
       if (e.key === "Enter") btn.click();
     });
     wrap.appendChild(btn);

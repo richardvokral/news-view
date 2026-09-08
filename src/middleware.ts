@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+// Coarse gate only: this checks that a Logto cookie *exists*, nothing more.
+// Real authorization (valid session + section grant) lives in every route
+// handler and page — see src/lib/access.ts.
 const PROTECTED_PREFIXES = [
   "/reports",
   "/monitor",
+  "/news",
+  "/analyze",
   "/admin",
   "/api/admin",
   "/api/plausible",
@@ -39,6 +44,8 @@ export const config = {
   matcher: [
     "/reports/:path*",
     "/monitor/:path*",
+    "/news/:path*",
+    "/analyze/:path*",
     "/admin/:path*",
     "/api/admin/:path*",
     "/api/plausible",

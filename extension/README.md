@@ -7,8 +7,10 @@ suggestions (per-suggestion accept/reject **and** a whole-text insert), and
 write the approved text back into the CKEditor so the CMS can save it.
 
 The backend lives in this same repo (Next.js). The extension authenticates by
-**email only** (a password field will be added in a later stage) and stores a
-bearer token; all network calls go through the background service worker.
+e-mail plus, when the backend sets `EXTENSION_LOGIN_SECRET`, a shared **access
+code** (per-user passwords are a later stage). It stores the returned bearer
+token — never the code — and all network calls go through the background
+service worker.
 
 ## Load unpacked
 
@@ -26,7 +28,10 @@ No build step is required.
    `https://cms.echomedia.cz/cmsAdmin/index.html#/editorial/articles/edit/echo24cz/<id>`.
 2. Click **AI korektura** (top-right) to open the sidebar.
 3. **Log in** with an email that has access to the project (the same access as
-   the news-view app). On success a token is stored.
+   the news-view app). If the backend requires an access code, enter it in
+   **Přístupový kód**; otherwise leave that field empty. On success a token is
+   stored (valid 30 days). Logins are rate-limited, so repeated failures will
+   start returning "Příliš mnoho pokusů".
 4. Pick a **mode** and which **fields** (titulek / tělo) to check, then
    **Zkontrolovat**.
 5. Review: a word-level **diff** and a **list of suggestions** with checkboxes.

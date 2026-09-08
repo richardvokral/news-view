@@ -2,6 +2,17 @@
 
 Reverse-chronological log of notable changes. One entry per meaningful shipment, not per commit — see `git log` for the full history. Add a new entry (top of the list) whenever you land a user-visible feature, a new integration, a schema change, or an operational change.
 
+## 2026-09
+
+- **Security review pass.** Closed the authorization gaps a route-by-route audit turned up, and brought dependencies back to zero known advisories.
+  - `GET /api/plausible` now verifies the session and the `reports` grant itself. It previously trusted the edge middleware, which only checks that a `logto_<APP_ID>` cookie *exists* — any forged value reached the Plausible proxy. A new `getSession({fromClaimsOnly: true})` keeps that hot path cheap by skipping the `/userinfo` round-trip.
+  - `/api/cron/*` share one gate (`src/lib/cron-auth.ts`): constant-time secret compare, **failing closed** when `CRON_SECRET` is unset. `fetch-news` used to be wide open in that case *and* accepted the mere presence of an `upstash-signature` header. The `/news` "Fetch Now" button moved to `POST /api/news/fetch` (session + `news`), so the cron endpoint no longer has to be publicly reachable. **`CRON_SECRET` must now be set in Vercel or ingestion stops.**
+  - `GET /api/topics` and `GET /api/stats` require the `news` grant (both were unauthenticated); `?refresh=1`, which forces a paid re-cluster, is admin-only. `/analyze` and `/api/analyze` require `reports` instead of just a login.
+  - Extension login is rate-limited (per IP and per e-mail) and accepts an optional shared enrolment code via `EXTENSION_LOGIN_SECRET`; `/api/proofread` is capped at 60 requests/h per user and 200 000 input characters. **Set `EXTENSION_LOGIN_SECRET`** — without it, knowing a granted e-mail address is still enough to mint a 30-day token.
+  - Removed `POST /api/auth`, a legacy unauthenticated password endpoint whose `settings_auth` cookie nothing read.
+  - Security response headers (HSTS, nosniff, frame-ancestors, referrer, permissions, noindex) in `next.config.ts`.
+  - Next.js 16.1.6 → 16.3.4, clearing ~28 advisories including several App Router **middleware/proxy bypasses**, plus `ws` and dev-tooling bumps. `npm audit` is clean.
+
 ## 2026-07
 
 - **Documentation overhaul.** Added the `docs/` set: architecture overview, per-subsystem docs (monitor, news pipeline, proofread, auth/admin), product vision, this updates log, and a product design doc for making article insight tracking analytics-provider-agnostic (`docs/plans/article-insights-providers.md`).

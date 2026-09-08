@@ -67,7 +67,7 @@ export default function NewsDashboard() {
               setFetching(true);
               setLoadingPhase("fetching");
               try {
-                await fetch("/api/cron/fetch-news");
+                await fetch("/api/news/fetch", { method: "POST" });
                 fetchTopics();
               } catch {
                 /* ignore */
