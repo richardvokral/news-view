@@ -346,3 +346,145 @@ INSERT INTO proofread_prompts (mode, label, body, is_default_mode) VALUES
    'Jsi jazykový korektor a stylistický redaktor českého textu. Najdi pravopisné, gramatické a interpunkční chyby a navíc navrhni JEMNÉ stylistické úpravy (plynulost, opakování slov, neobratné vazby) — zachovej autorův hlas a význam. Každou jednotlivou úpravu vrať jako samostatnou položku v poli "suggestions" — krátký doslovný úryvek z textu ("original") a jeho oprava ("replacement"). U HTML neměň značky ani atributy, opravuj jen textový obsah.',
    false)
 ON CONFLICT (mode) DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- Insights: long-horizon article performance + AI theme analysis (/insights).
+--
+-- Unlike the monitor (per-tick snapshots, pruned to days) these are small
+-- WEEKLY aggregates kept indefinitely, so themes can be compared across
+-- months. Nothing prunes them; each analysis run picks its own scope instead.
+-- ---------------------------------------------------------------------------
+
+-- One row per article per site. headline is de-slugified from the URL, so it
+-- has no diacritics; title (when the monitor's RSS sync has one) is the real
+-- thing. headline_source records which we used.
+CREATE TABLE IF NOT EXISTS insights_pages (
+  site_id TEXT NOT NULL,
+  page_path TEXT NOT NULL,
+  short_id TEXT,
+  slug TEXT,
+  sections TEXT[] NOT NULL DEFAULT '{}',
+  headline TEXT,
+  title TEXT,
+  headline_source TEXT NOT NULL DEFAULT 'slug',
+  first_week DATE,
+  last_week DATE,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (site_id, page_path)
+);
+CREATE INDEX IF NOT EXISTS insights_pages_sections_idx ON insights_pages USING GIN (sections);
+
+-- One row per article per ISO week.
+-- visits is NOT optional bookkeeping: bounce_rate and visit_duration are
+-- session metrics, so averaging them across weeks must be weighted by visits.
+-- Weighting by pageviews would be silently wrong.
+-- Also note: SUM(visitors) across weeks OVERCOUNTS uniques (a reader active in
+-- three weeks counts three times). Only pageviews sums cleanly.
+CREATE TABLE IF NOT EXISTS insights_page_weeks (
+  site_id TEXT NOT NULL,
+  page_path TEXT NOT NULL,
+  week_start DATE NOT NULL,
+  visitors INTEGER NOT NULL DEFAULT 0,
+  pageviews INTEGER NOT NULL DEFAULT 0,
+  visits INTEGER,
+  bounce_rate REAL,
+  visit_duration REAL,
+  time_on_page REAL,
+  is_partial BOOLEAN NOT NULL DEFAULT false,
+  fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (site_id, page_path, week_start)
+);
+CREATE INDEX IF NOT EXISTS insights_page_weeks_rank_idx ON insights_page_weeks(site_id, week_start, pageviews DESC);
+
+-- Ingest ledger: one row per (site, week). This is the durable truth for
+-- "what still needs loading" — not derived from the fact table, because a week
+-- with genuinely zero traffic would otherwise look missing forever.
+CREATE TABLE IF NOT EXISTS insights_backfill_weeks (
+  site_id TEXT NOT NULL,
+  week_start DATE NOT NULL,
+  week_end DATE NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'ok', 'error')),
+  is_partial BOOLEAN NOT NULL DEFAULT false,
+  truncated BOOLEAN NOT NULL DEFAULT false,
+  metrics_tier SMALLINT,
+  rows_written INTEGER NOT NULL DEFAULT 0,
+  api_calls INTEGER NOT NULL DEFAULT 0,
+  error TEXT,
+  fetched_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (site_id, week_start)
+);
+
+-- Run header, so a chunked backfill reads as one operation in the UI.
+CREATE TABLE IF NOT EXISTS insights_backfill_runs (
+  id BIGSERIAL PRIMARY KEY,
+  run_key TEXT NOT NULL UNIQUE,
+  site_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'running' CHECK (status IN ('running', 'done', 'error', 'cancelled', 'rate_capped')),
+  weeks_done INTEGER NOT NULL DEFAULT 0,
+  api_calls INTEGER NOT NULL DEFAULT 0,
+  metrics_tier SMALLINT,
+  path_filter TEXT,
+  error TEXT,
+  started_by TEXT,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  finished_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS insights_backfill_runs_site_idx ON insights_backfill_runs(site_id, started_at DESC);
+
+-- Singleton config, mirroring monitor_config / proofread_settings.
+CREATE TABLE IF NOT EXISTS insights_config (
+  id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  backfill_weeks INTEGER NOT NULL DEFAULT 26,
+  weeks_per_request INTEGER NOT NULL DEFAULT 4,
+  page_limit INTEGER NOT NULL DEFAULT 1000,
+  max_pages_per_week INTEGER NOT NULL DEFAULT 20,
+  max_requests_per_run INTEGER NOT NULL DEFAULT 150,
+  refetch_grace_hours INTEGER NOT NULL DEFAULT 48,
+  article_path_filter TEXT NOT NULL DEFAULT '',
+  article_path_regex TEXT NOT NULL DEFAULT '',
+  section_vocabulary JSONB NOT NULL DEFAULT '[]'::jsonb,
+  ai_model_key TEXT,
+  ai_top_articles INTEGER NOT NULL DEFAULT 300,
+  updated_by TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Editable analysis prompts. Bodies are seeded from TypeScript, not here:
+-- db-migrate.ts splits on a line-ending semicolon and strips a double dash to
+-- end of line, so a Czech prompt body in SQL is a latent migration break.
+CREATE TABLE IF NOT EXISTS insights_prompts (
+  key TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  body TEXT NOT NULL,
+  is_default BOOLEAN NOT NULL DEFAULT false,
+  version INTEGER NOT NULL DEFAULT 1,
+  updated_by TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Stored AI runs. prompt_body is a snapshot so comparing an old run with a
+-- re-run after a prompt edit stays meaningful.
+CREATE TABLE IF NOT EXISTS insights_ai_runs (
+  id BIGSERIAL PRIMARY KEY,
+  site_id TEXT NOT NULL,
+  params JSONB NOT NULL DEFAULT '{}'::jsonb,
+  prompt_key TEXT,
+  prompt_body TEXT NOT NULL,
+  model_key TEXT,
+  provider TEXT,
+  model_id TEXT,
+  status TEXT NOT NULL DEFAULT 'ok' CHECK (status IN ('ok', 'error')),
+  result JSONB,
+  error TEXT,
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  cost_usd NUMERIC(12, 6) NOT NULL DEFAULT 0,
+  cost_czk NUMERIC(12, 4) NOT NULL DEFAULT 0,
+  duration_ms INTEGER NOT NULL DEFAULT 0,
+  created_by TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS insights_ai_runs_site_idx ON insights_ai_runs(site_id, created_at DESC);
+
+INSERT INTO insights_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING;

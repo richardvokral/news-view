@@ -45,5 +45,6 @@ The proofread stack (router, prompts, usage accounting, per-user config) general
 ## Non-goals
 
 - Not a public-facing product; auth, UI language, and ops assume one newsroom.
-- Not a data warehouse or long-term analytics store — retention is deliberately days, not years; the analytics platform of record stays the source of truth.
+- Not a data warehouse or long-term analytics store **for the real-time path** — the monitor's per-tick snapshots are deliberately pruned to days, and the analytics platform of record stays the source of truth.
+  - The one deliberate exception is `/insights` (see [`insights.md`](insights.md)): small **weekly aggregates**, one row per article per week, kept indefinitely. Comparing this September with last September is the point, and the volume — roughly 500 articles x 52 weeks per site per year — is nothing like a warehouse. Cost stays bounded by the scope each analysis picks, not by retention.
 - Not a CMS. We read from and annotate the editorial workflow; we don't own content storage.

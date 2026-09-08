@@ -22,6 +22,11 @@ const TILES = [
     desc: "Enable / tune the per-article near-real-time tracker.",
   },
   {
+    href: "/admin/insights",
+    title: "Insights",
+    desc: "Weekly Plausible backfill, section vocabulary and AI theme-analysis prompts.",
+  },
+  {
     href: "/admin/settings",
     title: "App Settings",
     desc: "News pipeline API keys and clustering mode.",

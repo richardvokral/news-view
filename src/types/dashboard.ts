@@ -11,9 +11,14 @@ export type PlausibleMetric =
 
 export type PlausibleFilter = [string, string, string[]];
 
-export type Section = "reports" | "news" | "monitor";
+export type Section = "reports" | "news" | "monitor" | "insights";
 
-export const ALL_SECTIONS: Section[] = ["reports", "news", "monitor"];
+export const ALL_SECTIONS: Section[] = [
+  "reports",
+  "news",
+  "monitor",
+  "insights",
+];
 
 export interface MetricWidgetConfig {
   id: string;

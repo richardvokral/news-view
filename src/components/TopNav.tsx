@@ -56,6 +56,14 @@ export default function TopNav({ email, isAdmin, sections }: Props) {
               Analyze
             </Link>
           )}
+          {sections.includes("insights") && (
+            <Link
+              href="/insights"
+              className={`text-sm font-medium ${active("/insights")}`}
+            >
+              Insights
+            </Link>
+          )}
           {isAdmin && (
             <Link
               href="/admin"

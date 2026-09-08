@@ -13,6 +13,7 @@ Long-form docs live in `docs/`; this file stays the working-notes index. When yo
 - `docs/news-pipeline.md` — fetchers, clustering, /news, /reports, /analyze.
 - `docs/proofread.md` — proofread backend + Chrome extension.
 - `docs/auth-and-admin.md` — auth/ACL, DB/Redis, cron, env vars.
+- `docs/insights.md` — weekly Plausible backfill + AI theme analysis (`/insights`).
 - `docs/plans/` — product design docs; `article-insights-providers.md` is the active one (analytics-provider abstraction for the monitor).
 
 ## Project overview
@@ -54,9 +55,9 @@ There is no test runner wired up yet. Lint + a successful `next build` is the ba
 
 ### Routes (`src/app`)
 
-- `/` — redirects authenticated users into the first section they have access to (`reports` → `news` → `no-access`).
-- `/news`, `/reports`, `/analyze`, `/monitor` — feature surfaces. `/analyze` takes the `reports` grant (same Plausible data, same API key).
-- `/admin/*` — user & domain ACL, per-feature settings, defaults, monitor config, proofread admin.
+- `/` — redirects authenticated users into the first section they have access to (`reports` → `news` → `monitor` → `insights` → `no-access`).
+- `/news`, `/reports`, `/analyze`, `/monitor`, `/insights` — feature surfaces. `/analyze` takes the `reports` grant (same Plausible data, same API key). `/insights` has its own grant.
+- `/admin/*` — user & domain ACL, per-feature settings, defaults, monitor config, proofread admin, insights config.
 - `/no-access` — shown when a signed-in user has no section grants.
 - `/api/*` — server actions / route handlers. Subtree mirrors features (`api/monitor`, `api/proofread`, `api/admin`, `api/cron`, etc.). `api/logto/*` is public; `api/cron/*` is cookie-exempt but authenticates with `CRON_SECRET` (fails closed). **Every other handler does its own `getSession()` + section check** — middleware is not authorization.
 - `/api/extension/*` — bearer-token auth for the Chrome extension (no Logto cookie).
@@ -72,13 +73,15 @@ There is no test runner wired up yet. Lint + a successful `next build` is the ba
 - `monitor/` — Plausible-driven article monitor pipeline (`pipeline.ts`), config (`config.ts`), Postgres queries (`queries.ts`), Google Trends / RSS helpers.
 - `proofread/` — router that picks between Anthropic and OpenAI (`router.ts`), prompt templates (`prompts.ts`, Czech), diff parsing (`parse.ts`), usage accounting (`usage.ts`), bearer auth for the extension (`auth.ts`).
 - `analyze/` — Anthropic tool-use prompts for editorial analysis.
+- `insights/` — long-horizon article stats: chunked weekly Plausible backfill (`backfill.ts`), URL/section parsing (`paths.ts`), ISO-week maths (`weeks.ts`), Postgres access (`store.ts`), and the AI theme analysis (`analyze.ts` + `providers.ts` + `ground.ts`, which recomputes every number the model might otherwise invent).
+- `ai/models.ts` — shared AI model catalog reader. Physically `proofread_models`; treat that table name as history, not ownership.
 - `dashboard/` — default layout + queries for the reports/news dashboards.
 - `storage/articles.ts`, `storage/settings.ts` — DB + Redis accessors used by everything above.
-- `plausible.ts`, `plausible-validate.ts` — Plausible API wrappers used by both reports and the monitor.
+- `plausible.ts`, `plausible-validate.ts` — Plausible API wrappers used by reports, the monitor and the insights backfill. `getBreakdownPaged` is the paginating variant for internal callers; the user-facing `MAX_LIMIT` of 100 deliberately stays put.
 
 ### Middleware (`src/middleware.ts`)
 
-Gate-only: checks that a `logto_<APP_ID>` cookie *exists* on protected prefixes (`/reports`, `/monitor`, `/news`, `/analyze`, `/admin`, `/api/admin`, `/api/plausible`, `/api/dashboard-layout`, `/api/monitor`, `/no-access`) and redirects to `/api/logto/sign-in` if missing. It never validates the cookie, so a forged one passes — it is a redirect convenience for pages, nothing more. Fine-grained ACL (per-section, per-domain) happens in route handlers via `src/lib/access.ts`; **do not rely on middleware for authorization**, and note that Next has shipped several middleware-bypass advisories, so a route whose only gate is middleware is a route with no gate.
+Gate-only: checks that a `logto_<APP_ID>` cookie *exists* on protected prefixes (`/reports`, `/monitor`, `/news`, `/analyze`, `/insights`, `/admin`, `/api/admin`, `/api/plausible`, `/api/dashboard-layout`, `/api/monitor`, `/no-access`) and redirects to `/api/logto/sign-in` if missing. It never validates the cookie, so a forged one passes — it is a redirect convenience for pages, nothing more. Fine-grained ACL (per-section, per-domain) happens in route handlers via `src/lib/access.ts`; **do not rely on middleware for authorization**, and note that Next has shipped several middleware-bypass advisories, so a route whose only gate is middleware is a route with no gate.
 
 ### Chrome extension (`extension/`)
 
@@ -117,6 +120,7 @@ MV3 extension loaded unpacked. Communicates with this app over HTTPS using a bea
 ## Where to look first
 
 - Adding a news source → `src/lib/fetchers/` + register in `index.ts`.
+- Changing what `/insights` loads or analyses → `src/lib/insights/`; runbook in `docs/insights.md`.
 - Changing clustering behavior → `src/lib/clustering/hybrid-clustering.ts` is the entry point.
 - Changing what shows on `/monitor` → `src/lib/monitor/pipeline.ts` and `src/app/monitor/page.tsx`; runbook in `docs/article-monitor.md`.
 - Proofread prompt or model tweaks → `src/lib/proofread/prompts.ts` and `router.ts`.
@@ -131,6 +135,9 @@ MV3 extension loaded unpacked. Communicates with this app over HTTPS using a bea
 - The Chrome extension defaults its backend to `https://news-view.vercel.app`. For local testing, point it to `http://localhost:3000` in **Nastavení serveru**.
 - `ADMIN_EMAILS` is read fresh on every request; rotating it does not require a redeploy if you change it in Vercel env, but a redeploy is still needed for it to apply (env is baked at build for non-edge).
 - Rate limits fail **open** when Redis is unreachable (by design — Redis is on every hot path), so they're a speed bump, not a hard cap.
+- `maxDuration` in a route file must be a **literal** — Next rejects an imported constant with "Invalid segment configuration export". `/api/insights/backfill` hardcodes 300 next to a comment pointing at `BACKFILL_MAX_DURATION_S`.
+- The migrator's SQL splitter breaks on a line-ending `;` or a `--` inside a string literal, so Czech prompt bodies are seeded from TypeScript (`ensureDefaultPrompts()`), not from `db-schema.sql`. Do the same for any new prose seed.
+- Summing weekly Plausible `visitors` overcounts uniques; only `pageviews` sums cleanly. `bounce_rate`/`visit_duration` are session metrics and must be averaged weighted by `visits`.
 - `eslint-config-next` 16.3 enabled the React Compiler rules. The reports widgets fetch inside effects and trip `react-hooks/set-state-in-effect`; those files are demoted to warnings in `eslint.config.mjs` so the lint gate still bites for new code. The widgets want a real data-fetching refactor.
 
 ## Updating this file
