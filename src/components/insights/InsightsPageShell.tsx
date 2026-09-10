@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import ArticlesTab from "./ArticlesTab";
 import ThemesTab from "./ThemesTab";
+import TitlesTab from "./TitlesTab";
+import RewriteTab from "./RewriteTab";
 
 export interface InsightsShellProps {
   sites: string[];
@@ -17,7 +19,7 @@ export interface InsightsShellProps {
   defaultModelKey: string | null;
 }
 
-type Tab = "articles" | "themes";
+type Tab = "articles" | "themes" | "titles" | "rewrite";
 
 function TabButton({
   active,
@@ -50,7 +52,13 @@ export default function InsightsPageShell(props: InsightsShellProps) {
 
   // Tab and site live in the URL, matching /monitor. The default tab is the
   // absence of the param so a bare /insights link stays clean.
-  const tab: Tab = searchParams.get("tab") === "themes" ? "themes" : "articles";
+  const raw = searchParams.get("tab");
+  const tab: Tab =
+    raw === "themes" || raw === "titles" || raw === "rewrite" ? raw : "articles";
+
+  // Saving a playbook in Titulky must make it selectable in Přepsat titulek
+  // without a reload.
+  const [playbookToken, setPlaybookToken] = useState(0);
 
   const updateParams = useCallback(
     (mutate: (p: URLSearchParams) => void) => {
@@ -118,21 +126,45 @@ export default function InsightsPageShell(props: InsightsShellProps) {
         <TabButton active={tab === "themes"} onClick={() => setTab("themes")}>
           Témata
         </TabButton>
+        <TabButton active={tab === "titles"} onClick={() => setTab("titles")}>
+          Titulky
+        </TabButton>
+        <TabButton active={tab === "rewrite"} onClick={() => setTab("rewrite")}>
+          Přepsat titulek
+        </TabButton>
       </div>
 
-      {tab === "articles" ? (
+      {tab === "articles" && (
         <ArticlesTab
           site={props.currentSite}
           backfillWeeks={props.backfillWeeks}
           weeksPerRequest={props.weeksPerRequest}
         />
-      ) : (
+      )}
+      {tab === "themes" && (
         <ThemesTab
           site={props.currentSite}
           prompts={props.prompts}
           models={props.models}
           defaultModelKey={props.defaultModelKey}
           defaultTopN={props.defaultTopN}
+        />
+      )}
+      {tab === "titles" && (
+        <TitlesTab
+          site={props.currentSite}
+          prompts={props.prompts}
+          models={props.models}
+          defaultModelKey={props.defaultModelKey}
+          onPlaybookSaved={() => setPlaybookToken((n) => n + 1)}
+        />
+      )}
+      {tab === "rewrite" && (
+        <RewriteTab
+          site={props.currentSite}
+          models={props.models}
+          defaultModelKey={props.defaultModelKey}
+          reloadToken={playbookToken}
         />
       )}
     </div>

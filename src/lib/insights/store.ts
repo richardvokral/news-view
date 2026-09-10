@@ -45,6 +45,10 @@ interface ConfigRow {
   section_vocabulary: unknown;
   ai_model_key: string | null;
   ai_top_articles: number;
+  title_fetch_per_run: number;
+  title_tail_weeks: number;
+  title_min_pageviews: number;
+  title_strip_suffixes: unknown;
   updated_by: string | null;
   updated_at: unknown;
 }
@@ -66,7 +70,8 @@ export async function getInsightsConfig(): Promise<InsightsConfig> {
     `SELECT backfill_weeks, weeks_per_request, page_limit, max_pages_per_week,
             max_requests_per_run, refetch_grace_hours, article_path_filter,
             article_path_regex, section_vocabulary, ai_model_key,
-            ai_top_articles, updated_by, updated_at
+            ai_top_articles, title_fetch_per_run, title_strip_suffixes,
+            title_tail_weeks, title_min_pageviews, updated_by, updated_at
        FROM insights_config WHERE id = 1`
   );
   if (rows.length === 0) return { ...DEFAULT_INSIGHTS_CONFIG };
@@ -88,6 +93,18 @@ export async function getInsightsConfig(): Promise<InsightsConfig> {
     aiModelKey: r.ai_model_key,
     aiTopArticles:
       num(r.ai_top_articles) || DEFAULT_INSIGHTS_CONFIG.aiTopArticles,
+    titleFetchPerRun:
+      num(r.title_fetch_per_run) || DEFAULT_INSIGHTS_CONFIG.titleFetchPerRun,
+    titleTailWeeks: Number.isFinite(Number(r.title_tail_weeks))
+      ? Number(r.title_tail_weeks)
+      : DEFAULT_INSIGHTS_CONFIG.titleTailWeeks,
+    titleMinPageviews:
+      num(r.title_min_pageviews) || DEFAULT_INSIGHTS_CONFIG.titleMinPageviews,
+    titleStripSuffixes: Array.isArray(r.title_strip_suffixes)
+      ? (r.title_strip_suffixes as unknown[]).filter(
+          (v): v is string => typeof v === "string"
+        )
+      : [],
     updatedBy: r.updated_by,
     updatedAt: r.updated_at ? iso(r.updated_at) : null,
   };
@@ -114,14 +131,19 @@ export async function saveInsightsConfig(
   const maxRequestsPerRun = clamp(next.maxRequestsPerRun, 1, 600);
   const refetchGraceHours = clamp(next.refetchGraceHours, 0, 336);
   const aiTopArticles = clamp(next.aiTopArticles, 20, 600);
+  const titleFetchPerRun = clamp(next.titleFetchPerRun, 10, 1000);
+  const titleTailWeeks = clamp(next.titleTailWeeks, 0, 4);
+  const titleMinPageviews = clamp(next.titleMinPageviews, 1, 10000);
 
   await getDb().query(
     `INSERT INTO insights_config
        (id, backfill_weeks, weeks_per_request, page_limit, max_pages_per_week,
         max_requests_per_run, refetch_grace_hours, article_path_filter,
         article_path_regex, section_vocabulary, ai_model_key, ai_top_articles,
-        updated_by, updated_at)
-     VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, NOW())
+        title_fetch_per_run, title_strip_suffixes, title_tail_weeks,
+        title_min_pageviews, updated_by, updated_at)
+     VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12,
+             $13::jsonb, $14, $15, $16, NOW())
      ON CONFLICT (id) DO UPDATE SET
        backfill_weeks = EXCLUDED.backfill_weeks,
        weeks_per_request = EXCLUDED.weeks_per_request,
@@ -134,6 +156,10 @@ export async function saveInsightsConfig(
        section_vocabulary = EXCLUDED.section_vocabulary,
        ai_model_key = EXCLUDED.ai_model_key,
        ai_top_articles = EXCLUDED.ai_top_articles,
+       title_fetch_per_run = EXCLUDED.title_fetch_per_run,
+       title_strip_suffixes = EXCLUDED.title_strip_suffixes,
+       title_tail_weeks = EXCLUDED.title_tail_weeks,
+       title_min_pageviews = EXCLUDED.title_min_pageviews,
        updated_by = EXCLUDED.updated_by,
        updated_at = NOW()`,
     [
@@ -148,6 +174,12 @@ export async function saveInsightsConfig(
       JSON.stringify(normalizeVocabulary(next.sectionVocabulary)),
       next.aiModelKey,
       aiTopArticles,
+      titleFetchPerRun,
+      JSON.stringify(
+        next.titleStripSuffixes.map((v) => v.trim()).filter(Boolean)
+      ),
+      titleTailWeeks,
+      titleMinPageviews,
       email,
     ]
   );
@@ -543,6 +575,8 @@ export interface RecordRunInput {
   costCzk: number;
   durationMs: number;
   createdBy: string;
+  /** Separates themes / titles / rewrite runs in the shared history. */
+  kind?: string;
 }
 
 export async function recordAnalysisRun(
@@ -553,9 +587,9 @@ export async function recordAnalysisRun(
     `INSERT INTO insights_ai_runs
        (site_id, params, prompt_key, prompt_body, model_key, provider, model_id,
         status, result, error, input_tokens, output_tokens, cost_usd, cost_czk,
-        duration_ms, created_by)
+        duration_ms, created_by, kind)
      VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12,
-             $13, $14, $15, $16)
+             $13, $14, $15, $16, $17)
      RETURNING id`,
     [
       input.siteId,
@@ -574,6 +608,7 @@ export async function recordAnalysisRun(
       input.costCzk,
       input.durationMs,
       input.createdBy,
+      input.kind ?? "themes",
     ]
   );
   return rows.length ? Number(rows[0].id) : null;
@@ -603,7 +638,8 @@ function rowToRun(r: Record<string, unknown>): InsightRunRow {
 
 export async function listAnalysisRuns(
   siteId: string,
-  limit = 25
+  limit = 25,
+  kind = "themes"
 ): Promise<InsightRunRow[]> {
   if (!hasDb()) return [];
   const { rows } = await getDb().query(
@@ -611,10 +647,10 @@ export async function listAnalysisRuns(
             status, NULL::jsonb AS result, error, input_tokens, output_tokens,
             cost_usd, cost_czk, duration_ms, created_by, created_at
        FROM insights_ai_runs
-      WHERE site_id = $1
+      WHERE site_id = $1 AND kind = $3
       ORDER BY created_at DESC
       LIMIT $2`,
-    [siteId, Math.min(Math.max(1, limit), 100)]
+    [siteId, Math.min(Math.max(1, limit), 100), kind]
   );
   return rows.map(rowToRun);
 }

@@ -36,6 +36,22 @@ export interface InsightsConfig {
   sectionVocabulary: string[];
   aiModelKey: string | null;
   aiTopArticles: number;
+  titleFetchPerRun: number;
+  /**
+   * Weeks after debut counted toward a title's score. 0 = the debut week only.
+   * Tune from the decay profile: hard news usually puts 85-95% of an article's
+   * lifetime pageviews in its first week, which makes 0 right and simplest.
+   */
+  titleTailWeeks: number;
+  /**
+   * Floor for the title cohorts. Its real job is excluding mis-parsed paths
+   * (AMP variants, redirects), not excluding genuine flops — a one-pageview
+   * article against a median of 200 is a real flop and exactly the signal the
+   * bottom cohort wants. Keep it low.
+   */
+  titleMinPageviews: number;
+  /** Trailing site-name suffixes stripped from a fetched og:title. */
+  titleStripSuffixes: string[];
   updatedBy: string | null;
   updatedAt: string | null;
 }
@@ -52,6 +68,10 @@ export const DEFAULT_INSIGHTS_CONFIG: InsightsConfig = {
   sectionVocabulary: [],
   aiModelKey: null,
   aiTopArticles: 300,
+  titleFetchPerRun: 200,
+  titleTailWeeks: 0,
+  titleMinPageviews: 10,
+  titleStripSuffixes: [],
   updatedBy: null,
   updatedAt: null,
 };

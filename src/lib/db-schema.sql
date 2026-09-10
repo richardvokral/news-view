@@ -488,3 +488,34 @@ CREATE TABLE IF NOT EXISTS insights_ai_runs (
 CREATE INDEX IF NOT EXISTS insights_ai_runs_site_idx ON insights_ai_runs(site_id, created_at DESC);
 
 INSERT INTO insights_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+-- Insights: title analysis, saved rewriting playbooks, og:title enrichment.
+ALTER TABLE insights_pages
+  ADD COLUMN IF NOT EXISTS title_fetched_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS title_fetch_status TEXT;
+
+-- Prompts gain a kind so title playbooks share the store, editor and
+-- versioning with analysis prompts. site_id NULL means shared across sites;
+-- rules learned from one masthead should not silently drive another's.
+-- Playbook keys are namespaced (title:<siteId>:<name>) rather than adding a
+-- composite unique constraint, since ADD CONSTRAINT has no IF NOT EXISTS form.
+ALTER TABLE insights_prompts
+  ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'analysis',
+  ADD COLUMN IF NOT EXISTS site_id TEXT,
+  ADD COLUMN IF NOT EXISTS derived_from_run_id BIGINT;
+
+CREATE INDEX IF NOT EXISTS insights_prompts_kind_idx ON insights_prompts(kind, site_id);
+
+-- One run history for every insights AI feature, so cost stays in one place.
+ALTER TABLE insights_ai_runs
+  ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'themes';
+
+CREATE INDEX IF NOT EXISTS insights_ai_runs_kind_idx ON insights_ai_runs(site_id, kind, created_at DESC);
+
+ALTER TABLE insights_config
+  ADD COLUMN IF NOT EXISTS title_fetch_per_run INTEGER NOT NULL DEFAULT 200,
+  ADD COLUMN IF NOT EXISTS title_strip_suffixes JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+ALTER TABLE insights_config
+  ADD COLUMN IF NOT EXISTS title_tail_weeks SMALLINT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS title_min_pageviews INTEGER NOT NULL DEFAULT 10;

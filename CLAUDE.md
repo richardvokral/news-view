@@ -13,7 +13,7 @@ Long-form docs live in `docs/`; this file stays the working-notes index. When yo
 - `docs/news-pipeline.md` — fetchers, clustering, /news, /reports, /analyze.
 - `docs/proofread.md` — proofread backend + Chrome extension.
 - `docs/auth-and-admin.md` — auth/ACL, DB/Redis, cron, env vars.
-- `docs/insights.md` — weekly Plausible backfill + AI theme analysis (`/insights`).
+- `docs/insights.md` — weekly Plausible backfill, theme analysis, headline analysis + rewriter (`/insights`).
 - `docs/plans/` — product design docs; `article-insights-providers.md` is the active one (analytics-provider abstraction for the monitor).
 
 ## Project overview
@@ -74,6 +74,7 @@ There is no test runner wired up yet. Lint + a successful `next build` is the ba
 - `proofread/` — router that picks between Anthropic and OpenAI (`router.ts`), prompt templates (`prompts.ts`, Czech), diff parsing (`parse.ts`), usage accounting (`usage.ts`), bearer auth for the extension (`auth.ts`).
 - `analyze/` — Anthropic tool-use prompts for editorial analysis.
 - `insights/` — long-horizon article stats: chunked weekly Plausible backfill (`backfill.ts`), URL/section parsing (`paths.ts`), ISO-week maths (`weeks.ts`), Postgres access (`store.ts`), and the AI theme analysis (`analyze.ts` + `providers.ts` + `ground.ts`, which recomputes every number the model might otherwise invent).
+  - Headline work sits alongside it: `titleAnalysis.ts` (cohort SQL), `titleRun.ts` (analysis + rewriter orchestration), `titlePrompts.ts` / `titleProviders.ts` (Czech contracts and schemas), `titleFetch.ts` (og:title enrichment). Saved playbooks live in `insights_prompts` with `kind='title_rewrite'`.
 - `ai/models.ts` — shared AI model catalog reader. Physically `proofread_models`; treat that table name as history, not ownership.
 - `dashboard/` — default layout + queries for the reports/news dashboards.
 - `storage/articles.ts`, `storage/settings.ts` — DB + Redis accessors used by everything above.
@@ -138,6 +139,8 @@ MV3 extension loaded unpacked. Communicates with this app over HTTPS using a bea
 - `maxDuration` in a route file must be a **literal** — Next rejects an imported constant with "Invalid segment configuration export". `/api/insights/backfill` hardcodes 300 next to a comment pointing at `BACKFILL_MAX_DURATION_S`.
 - The migrator's SQL splitter breaks on a line-ending `;` or a `--` inside a string literal, so Czech prompt bodies are seeded from TypeScript (`ensureDefaultPrompts()`), not from `db-schema.sql`. Do the same for any new prose seed.
 - Summing weekly Plausible `visitors` overcounts uniques; only `pageviews` sums cleanly. `bounce_rate`/`visit_duration` are session metrics and must be averaged weighted by `visits`.
+- **Never feed a `truncated` week into a bottom-performer analysis.** A truncated week hit the page cap, so its long tail — the low performers — is absent rather than zero, and "bottom" silently becomes the middle of the distribution. `listTitleCohorts` joins `insights_backfill_weeks` for exactly this reason.
+- Stored headlines are mostly de-slugified from URLs, so they have no diacritics or punctuation. Anything reasoning about headline *form* must report the slug-derived share; `/admin/insights` can fetch real og:titles.
 - `eslint-config-next` 16.3 enabled the React Compiler rules. The reports widgets fetch inside effects and trip `react-hooks/set-state-in-effect`; those files are demoted to warnings in `eslint.config.mjs` so the lint gate still bites for new code. The widgets want a real data-fetching refactor.
 
 ## Updating this file

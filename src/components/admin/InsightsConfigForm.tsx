@@ -59,6 +59,47 @@ export default function InsightsConfigForm({
   const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null);
   const [discovering, setDiscovering] = useState(false);
   const [discoverSite, setDiscoverSite] = useState(sites[0] ?? "");
+  const [fetching, setFetching] = useState(false);
+  const [fetchMsg, setFetchMsg] = useState<string | null>(null);
+  const [coverage, setCoverage] = useState<{
+    total: number;
+    real: number;
+    failed: number;
+  } | null>(null);
+
+  // Loops the chunked fetch until nothing is left, like the Plausible backfill.
+  const fetchTitles = useCallback(async () => {
+    if (!discoverSite) return;
+    setFetching(true);
+    setFetchMsg(null);
+    let updated = 0;
+    try {
+      for (;;) {
+        const res = await fetch("/api/admin/insights/title-fetch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ site: discoverSite }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        updated += data.updated ?? 0;
+        setCoverage(data.coverage ?? null);
+        if (data.skippedReason) {
+          setFetchMsg(`Zastaveno: ${data.skippedReason}`);
+          break;
+        }
+        if (!data.remaining) {
+          setFetchMsg(`Hotovo — doplněno ${updated} titulků.`);
+          break;
+        }
+        setFetchMsg(`Doplněno ${updated}, zbývá ${data.remaining}…`);
+      }
+    } catch (err) {
+      setFetchMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setFetching(false);
+    }
+  }, [discoverSite]);
 
   function setField<K extends keyof InsightsConfig>(
     key: K,
@@ -300,6 +341,82 @@ export default function InsightsConfigForm({
       </div>
 
       <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <h2 className="mb-1 font-semibold text-gray-900">Skutečné titulky</h2>
+        <p className="mb-4 text-xs text-gray-500">
+          Uložené titulky jsou většinou odvozené z URL, takže nemají diakritiku ani
+          interpunkci — a právě to rozbor titulků potřebuje vidět. Tímto se stáhne
+          skutečný titulek (og:title) z článků na vašem webu. Běží po částech a
+          nikdy nepřepíše titulek získaný z RSS.
+        </p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <NumberField
+            label="Článků na běh"
+            hint="Vyšší číslo = delší běh, víc požadavků na váš web"
+            value={config.titleFetchPerRun}
+            min={10}
+            onChange={(v) => setField("titleFetchPerRun", v)}
+          />
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium uppercase text-gray-500">
+              Koncovky k odstranění
+            </span>
+            <textarea
+              value={config.titleStripSuffixes.join("\n")}
+              onChange={(e) =>
+                setField(
+                  "titleStripSuffixes",
+                  e.target.value.split("\n").map((v) => v.trim()).filter(Boolean)
+                )
+              }
+              rows={3}
+              placeholder={"| Echo24\n– Echo24"}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-xs"
+            />
+            <span className="mt-1 block text-xs text-gray-500">
+              Jedna na řádek. Obecné pravidlo se schválně nepoužívá — uřízlo by
+              druhou půlku titulků typu &bdquo;Zemřel Karel Gott – legenda&ldquo;.
+            </span>
+          </label>
+        </div>
+
+        <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50/60 p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium text-gray-700">Stáhnout titulky</span>
+            {sites.length > 1 && (
+              <select
+                value={discoverSite}
+                onChange={(e) => setDiscoverSite(e.target.value)}
+                className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+              >
+                {sites.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            )}
+            <button
+              type="button"
+              onClick={fetchTitles}
+              disabled={fetching || !discoverSite}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              {fetching ? "Stahuji…" : "Spustit"}
+            </button>
+            {coverage && (
+              <span className="text-xs text-gray-600">
+                {coverage.real} z {coverage.total} má skutečný titulek
+                {coverage.failed > 0 ? ` · ${coverage.failed} nedostupných` : ""}
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-gray-500">
+            Nejdřív zkuste malý běh a ověřte, že titulky vypadají správně — teprve
+            pak pusťte zbytek.
+          </p>
+          {fetchMsg && <p className="mt-2 text-xs text-gray-700">{fetchMsg}</p>}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <h2 className="mb-1 font-semibold text-gray-900">AI analýza</h2>
         <p className="mb-4 text-xs text-gray-500">
           Model se bere ze společného katalogu (Admin → AI Proofreading →
@@ -325,6 +442,20 @@ export default function InsightsConfigForm({
                 ))}
             </select>
           </label>
+          <NumberField
+            label="Týdnů po vydání"
+            hint="0 = hodnotit jen týden vydání. Zvyšte, jen když máte hodně evergreenu."
+            value={config.titleTailWeeks}
+            min={0}
+            onChange={(v) => setField("titleTailWeeks", v)}
+          />
+          <NumberField
+            label="Min. zobrazení pro rozbor titulků"
+            hint="Vyřazuje špatně naparsované URL, ne skutečné propadáky — držte nízko."
+            value={config.titleMinPageviews}
+            min={1}
+            onChange={(v) => setField("titleMinPageviews", v)}
+          />
           <NumberField
             label="Článků do analýzy"
             hint="Víc článků = přesnější témata i vyšší cena"

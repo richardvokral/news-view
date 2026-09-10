@@ -1,6 +1,6 @@
-# Insights: most-read articles + AI theme analysis
+# Insights: most-read articles, themes, and headline analysis
 
-`/insights` answers "what did people actually read over the last months, and what were the themes?" — the long-horizon counterpart to `/monitor`'s 48-hour view.
+`/insights` answers "what did people actually read over the last months, what were the themes, and what kind of headline earns traffic?" — the long-horizon counterpart to `/monitor`'s 48-hour view.
 
 It is deliberately **two separate halves**: loading data from Plausible, and analysing it with an AI. They share nothing but the tables, so an analysis costs no Plausible calls and a reload costs no AI tokens.
 
@@ -112,6 +112,69 @@ From the shared catalog via `src/lib/ai/models.ts` (physically `proofread_models
 
 Cost per run is recorded in `insights_ai_runs` via the shared `estimateCost`. A 300-article run is roughly 15k input tokens: about 0.11 USD on Sonnet, 0.04 on Haiku.
 
+## Part 5 — Title analysis, playbooks and the rewriter
+
+Three connected pieces answering "what kind of headline earns traffic, and how do I fix this one".
+
+### Titulky — the analysis (`src/lib/insights/titleAnalysis.ts`, `titleRun.ts`)
+
+Four cohorts, shown side by side because they answer different questions:
+
+| Cohort | What it is |
+| --- | --- |
+| normalizovaní vítězové / propadáky | Article against the **median of its own section in the week it debuted** — this is where the title's contribution shows. |
+| absolutní vítězové / propadáky | Highest and lowest outright — mostly surfaces popular *topics*. |
+
+The contrast is the point. If the two agree perfectly, the normalisation isn't doing its job.
+
+**Scoring.** `ln((pv + 1) / (bucket median + 1))` over a fixed exposure window `[debut week, debut week + titleTailWeeks]`. Log-ratio because it is symmetric: 2× and 0.5× become +0.69 and −0.69, so a top-vs-bottom read isn't skewed by construction. The window is identical for every article, so its value and the bucket median are literally the same statistic — that dissolves the "article accrues traffic for weeks, median is weekly" mismatch rather than patching it.
+
+**Three guards, each protecting against a silent failure:**
+
+- **Truncated weeks are excluded entirely.** A truncated week hit the page cap, so it is missing its long tail — its low performers are *absent, not zero*. Feed one in and "bottom" is actually the middle of the distribution, inverting the whole feature. This is the single most dangerous failure mode here and the reason `insights_backfill_weeks` is joined at all.
+- **Left-censoring.** An article whose debut equals the earliest loaded week was already live before we started looking; its debut was never observed.
+- **No per-week row requirement.** Plausible omits zero-traffic pages, so a genuine flop has *no row* in a later week. Requiring one would delete exactly the articles this feature exists to find.
+
+**Small-sample handling.** A `(section, debut week)` bucket needs `MIN_BUCKET_ARTICLES` (12) to be used; thinner buckets fall back to an all-sections bucket for that week, which re-introduces the topic confound — so the level is recorded and the count is reported in the caveats rather than hidden. `titleMinPageviews` (default 10) exists to exclude mis-parsed paths, not genuine flops; a one-view article against a median of 200 is real signal.
+
+**Cohort balancing.** Live blogs and serials ("Válka na Ukrajině — 512. den") produce dozens of near-identical titles. Each `(section, debut week)` bucket contributes at most `ceil(size / 12)` to any cohort — otherwise the model confidently reports that serial numbering underperforms, when the real cause is that live blogs accrue traffic differently.
+
+**What the model sees:** `idx|cohorts|sections|title`, with `~` marking a slug-derived title and an explicit instruction not to infer anything from missing punctuation there. No numbers. Every figure in the output — pattern counts, median ratios, slug share — is computed server-side from the rows.
+
+### The playbook
+
+The same call returns `playback_draft`: Czech rules for writing headlines, written as instructions rather than as a report, because it will later be fed back to a model. The Titulky tab shows it in an editable box; **Uložit jako playbook** writes an `insights_prompts` row with `kind='title_rewrite'`, the `site_id` it was measured on, and `derived_from_run_id`.
+
+Playbooks are **per site with a shared fallback** — rules learned from one masthead's audience shouldn't quietly drive another's headlines. Keys are namespaced (`title:<siteId>:<name>`) rather than adding a composite unique constraint, since `ADD CONSTRAINT` has no `IF NOT EXISTS` form.
+
+Save-time validation rejects any rule line containing a digit or `%`: a playbook is model-generated prose a human lightly edited, so a hallucinated statistic can ride along unnoticed. A Czech number-*word* regex is deliberately not attempted — "nepoužívej víc než dvě jména" is a legitimate rule — the output contract handles the prose case instead.
+
+### Přepsat titulek — the rewriter (`src/lib/insights/titleRun.ts`)
+
+Paste a Czech headline, optionally with section and perex, pick a playbook and a model; get a critique plus 3–5 variants, each citing the playbook rules it applies.
+
+**This is the hardest thing in the feature to keep honest**, because unlike the theme analysis there are no rows to recompute against — nothing is verifiable after the fact, so the contract *is* the guarantee. Four layers:
+
+1. **Position.** `REWRITE_CONTRACT` comes last in the system message, with a closing override naming the concrete poisoned instructions ("odhadni nárůst čtenosti", "seřaď podle očekávaného CTR").
+2. **The playbook travels in the *user* message**, tagged as data — a deliberate divergence from the analysis prompts, whose bodies are admin-authored and sit in the system message. A playbook is model-generated, so it is treated as data, never as instruction.
+3. **Numbered rules.** The model returns `rule_ids`, and the server validates every id against the real playbook, dropping unknowns — the same reconciliation `article_indexes` gets in the theme analysis. Free-text rule labels would be unverifiable.
+4. **Server enforcement.** Prose fields containing a digit, or Czech performance phrases (`čtenost`, `CTR`, `bude fungovat lépe`), raise a visible warning. Digit runs in a variant title that don't appear in the submitted title are flagged per variant — a rewriter that turns "Ministr komentoval rozpočet" into "Ministr Stanjura: rozpočet je v troskách" has fabricated a quote, which in a newsroom is worse than a made-up percentage.
+
+The submitted title is sanitised before any prompt exists: control characters stripped, tag delimiters removed, collapsed to one line, capped at 300 characters. A multi-paragraph instruction block cannot survive that.
+
+## Part 6 — Fetching real titles (`src/lib/insights/titleFetch.ts`)
+
+Admin-only, at `/admin/insights`. Reads `og:title` from the site's own article pages, chunked with the same lock/cancel/deadline shape as the Plausible backfill.
+
+- **Only touches pages with no real title** (`headline_source = 'slug'`), so an RSS title is never downgraded. The RSS title was captured at publication — it is the headline that earned the clicks, which is the right one for a performance analysis.
+- **Reads only to `</head>` or 64 KB.** Article pages run 300–800 KB; without the cap a run would pull over a gigabyte for a single meta tag.
+- **Redirect check compares the short id**, not the full path. A redirect to the homepage or a section returns HTTP 200 with a perfectly good og:title — the *section's* title — which would poison the corpus with the same headline hundreds of times.
+- **Paywalls are parsed anyway.** A 401/403/429 page usually still serves og:title for crawlers, and that is the difference between enriching 40% and 95% of a paywalled site.
+- **Quality gate** rejects error-page titles, very short ones, and — the one that matters — any multi-word "title" with no Czech diacritics at all, which is almost certainly a slug echo and adds nothing over what we already have.
+- Suffix stripping is **configuration only**. A generic dash rule would happily eat the second half of "Zemřel Karel Gott – legenda české hudby".
+
+Uses its own hourly budget, not the monitor's shared Plausible counter — these are requests to a different origin entirely.
+
 ## Tables
 
 | Table | Purpose |
@@ -121,8 +184,8 @@ Cost per run is recorded in `insights_ai_runs` via the shared `estimateCost`. A 
 | `insights_backfill_weeks` | Ingest ledger keyed `(site_id, week_start)` — the durable answer to "what still needs loading". Not derived from the facts, because a week with genuinely zero traffic would otherwise look missing forever. |
 | `insights_backfill_runs` | Run header, so a chunked backfill reads as one operation. |
 | `insights_config` | Singleton knobs. |
-| `insights_prompts` | Editable analysis prompts. |
-| `insights_ai_runs` | Stored runs: scope, prompt snapshot, model, result, tokens, cost. |
+| `insights_prompts` | Editable analysis prompts and saved title playbooks (`kind`, `site_id`, `derived_from_run_id`). |
+| `insights_ai_runs` | Stored runs for all three AI features (`kind` = `themes` / `titles` / `rewrite`): scope, prompt snapshot, model, result, tokens, cost. |
 
 ## API surface
 
@@ -135,7 +198,11 @@ Cost per run is recorded in `insights_ai_runs` via the shared `estimateCost`. A 
 | `POST /api/insights/analyze` | `insights` + rate limit | Runs and stores an analysis. |
 | `GET /api/insights/analyses` | `insights` | Run history; `?id=` returns one with its full result. |
 | `GET/PUT /api/admin/insights/config` | admin | Knobs, vocabulary, article pattern. |
+| `POST /api/insights/title-analysis` | `insights` + rate limit | Cohort analysis + playbook draft. |
+| `GET/POST /api/insights/playbooks` | `insights` | List and save title playbooks. |
+| `POST /api/insights/rewrite` | `insights` + rate limit | Critique and variants for one headline. |
 | `GET/PUT /api/admin/insights/prompts` | admin | Prompt editor. |
+| `GET/POST /api/admin/insights/title-fetch` | admin | og:title enrichment and coverage. |
 | `GET /api/admin/insights/section-suggestions` | admin | Leading-token frequencies for vocabulary discovery. |
 
 ## Cost guards
@@ -144,8 +211,8 @@ The `insights` grant can spend both Plausible quota and AI tokens, so limits are
 
 | | Fetch | Analyse |
 | --- | --- | --- |
-| Per user | 5/h | 10/h |
-| Per site, all users | 20/h | 40/h |
+| Per user | 5/h | 10/h (analysis), 60/h (rewrite) |
+| Per site, all users | 20/h | 40/h (analysis), 200/h (rewrite) |
 | Inside the run | `max_requests_per_run` calls, shared hourly counter | `topN` cap (600 hard) |
 
 `rate-limit.ts` fails open when Redis is down. For the fetch path that is acceptable because the lock and the in-run call budget are separate backstops.

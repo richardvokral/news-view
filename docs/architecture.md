@@ -23,7 +23,7 @@ One Next.js 16 (App Router) app on Vercel. State is split by durability: **Neon 
 | `/reports` | `reports` | Widget dashboard over the Plausible stats API; per-user + admin-default layouts. | [`news-pipeline.md`](news-pipeline.md) |
 | `/monitor` | `monitor` | Near-real-time per-article traffic, sources, authors, title history, competitor coverage, Trends. | [`article-monitor.md`](article-monitor.md) |
 | `/analyze` | `reports` | Natural-language Q&A over Plausible via Claude tool use (SSE). | [`news-pipeline.md`](news-pipeline.md) |
-| `/insights` | `insights` | Long-horizon most-read articles (weekly aggregates in Postgres) + AI theme analysis. | [`insights.md`](insights.md) |
+| `/insights` | `insights` | Long-horizon most-read articles (weekly aggregates in Postgres), AI theme analysis, headline analysis and a playbook-driven title rewriter. | [`insights.md`](insights.md) |
 | `/admin/*` | admin only | ACL, settings, monitor config, proofread console, migrations. | [`auth-and-admin.md`](auth-and-admin.md) |
 | Chrome extension | ACL via bearer | Czech proofreading inside the CMS editor. | [`proofread.md`](proofread.md) |
 
@@ -51,5 +51,5 @@ Pushes to the default branch (`claude/news-aggregator-tool-HvXDC`) auto-deploy t
 - [`news-pipeline.md`](news-pipeline.md) — ingestion, clustering, dashboards, analyze.
 - [`proofread.md`](proofread.md) — proofreading backend + extension.
 - [`auth-and-admin.md`](auth-and-admin.md) — auth, ACL, DB/Redis, cron, env.
-- [`insights.md`](insights.md) — weekly Plausible backfill + AI theme analysis.
+- [`insights.md`](insights.md) — weekly Plausible backfill, themes, headline analysis + rewriter.
 - [`plans/article-insights-providers.md`](plans/article-insights-providers.md) — design: analytics-provider-agnostic insight tracking.

@@ -1,4 +1,5 @@
 import type { AggregatedArticle } from "./types";
+import { DEFAULT_TITLE_ANALYSIS_PROMPT } from "./titlePrompts";
 
 /**
  * Appended in code after every editable prompt body, so an admin editing the
@@ -64,6 +65,7 @@ export function buildInsightsUserMessage(
 }
 
 export const DEFAULT_INSIGHTS_PROMPTS = [
+  DEFAULT_TITLE_ANALYSIS_PROMPT,
   {
     key: "temata",
     label: "Témata a doporučení",
