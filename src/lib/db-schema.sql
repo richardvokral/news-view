@@ -519,3 +519,22 @@ ALTER TABLE insights_config
 ALTER TABLE insights_config
   ADD COLUMN IF NOT EXISTS title_tail_weeks SMALLINT NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS title_min_pageviews INTEGER NOT NULL DEFAULT 10;
+
+-- Persisted title-form tags. Without these the analysis re-derives its pattern
+-- labels inside every LLM call, so the labels drift between runs and two
+-- analyses cannot be compared — which defeats the point of keeping history.
+CREATE TABLE IF NOT EXISTS insights_title_tags (
+  site_id TEXT NOT NULL,
+  page_path TEXT NOT NULL,
+  tag TEXT NOT NULL,
+  tagged_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  model_key TEXT,
+  PRIMARY KEY (site_id, page_path, tag)
+);
+CREATE INDEX IF NOT EXISTS insights_title_tags_tag_idx ON insights_title_tags(site_id, tag);
+
+ALTER TABLE insights_pages ADD COLUMN IF NOT EXISTS tagged_at TIMESTAMPTZ;
+
+ALTER TABLE insights_config
+  ADD COLUMN IF NOT EXISTS title_tag_vocabulary JSONB NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS title_tags_per_run INTEGER NOT NULL DEFAULT 300;

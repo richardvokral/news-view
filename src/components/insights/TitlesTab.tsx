@@ -5,6 +5,19 @@ import type { TitleAnalysisResult } from "@/lib/insights/titleRun";
 
 const fmt = new Intl.NumberFormat("cs-CZ");
 
+const TREND_LABEL: Record<string, string> = {
+  roste: "roste",
+  drzi_se: "drží se",
+  klesa: "klesá",
+  malo_dat: "málo dat",
+};
+const TREND_CLASS: Record<string, string> = {
+  roste: "bg-green-100 text-green-700",
+  drzi_se: "bg-gray-100 text-gray-600",
+  klesa: "bg-amber-100 text-amber-700",
+  malo_dat: "bg-gray-100 text-gray-400",
+};
+
 function weekOffset(weeks: number): string {
   const d = new Date();
   const shift = (d.getUTCDay() + 6) % 7;
@@ -189,6 +202,69 @@ export default function TitlesTab({
               <div className="text-xs font-medium uppercase text-blue-700">Titulek vs. téma</div>
               <p className="mt-1 text-sm text-blue-900">{result.contrastNote}</p>
             </div>
+          )}
+
+          {result.tagStats.length > 0 && (
+            <section>
+              <h3 className="mb-2 text-sm font-semibold text-gray-900">
+                Značky titulků
+              </h3>
+              <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+                <table className="min-w-full text-sm">
+                  <thead className="border-b border-gray-200 bg-gray-50 text-xs uppercase text-gray-500">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">Značka</th>
+                      <th className="px-3 py-2 text-right font-medium">Titulků</th>
+                      <th
+                        className="px-3 py-2 text-right font-medium"
+                        title="Medián oproti mediánu vlastní rubriky v týdnu vydání. 1,0 = průměrný."
+                      >
+                        Výkon
+                      </th>
+                      <th className="px-3 py-2 text-right font-medium">Vývoj</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {result.tagStats.map((t) => (
+                      <tr key={t.tag}>
+                        <td className="px-3 py-2 text-gray-900">{t.tag}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-gray-600">
+                          {t.articleCount}
+                        </td>
+                        <td
+                          className={`px-3 py-2 text-right tabular-nums font-medium ${
+                            t.medianRatio === null
+                              ? "text-gray-400"
+                              : t.medianRatio >= 1
+                                ? "text-green-700"
+                                : "text-amber-700"
+                          }`}
+                        >
+                          {t.medianRatio === null ? "—" : `${t.medianRatio}×`}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-xs font-medium ${TREND_CLASS[t.trend]}`}
+                            title={
+                              t.trend === "malo_dat"
+                                ? `Jen ${t.firstHalfCount} a ${t.secondHalfCount} titulků v půlkách období — na výrok o vývoji to nestačí.`
+                                : `První půlka ${t.firstHalfRatio}× → druhá ${t.secondHalfRatio}×`
+                            }
+                          >
+                            {TREND_LABEL[t.trend]}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-2 text-xs text-gray-500">
+                Značky jsou uložené, takže se mezi spuštěními nemění a dvě analýzy
+                jdou porovnat. Vývoj je srovnání první a druhé půlky období — ne
+                předpověď; u málo početných značek se záměrně neuvádí.
+              </p>
+            </section>
           )}
 
           <section>

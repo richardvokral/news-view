@@ -17,6 +17,7 @@ import { runTitleAnalysisCall, runRewriteCall } from "./titleProviders";
 import { sanitizeSubmittedTitle } from "./titlePrompts";
 import { COHORT_LABELS, type TitleCohort } from "./titlePrompts";
 import type { AnalysisScope } from "./types";
+import { listTagStats, type TagStat } from "./titleTags";
 
 export class TitleRunError extends Error {}
 
@@ -85,6 +86,13 @@ export interface TitleAnalysisResult {
   contrastNote: string;
   playbookDraft: string;
   observations: string[];
+  /**
+   * Stored tags, computed entirely in SQL. Unlike `patterns` — which the model
+   * re-derives every run and therefore relabels each time — these are stable,
+   * so two analyses months apart are comparable. Empty until a tagging pass
+   * has run in Admin.
+   */
+  tagStats: TagStat[];
   reconciliation: {
     assigned: number;
     unassigned: number;
@@ -199,6 +207,14 @@ export async function runTitleAnalysis(input: TitleAnalysisInput) {
     };
   });
 
+  const tagStats = await listTagStats({
+    siteId: input.siteId,
+    weekStartFrom: input.weekStartFrom,
+    weekStartTo: input.weekStartTo,
+    tailWeeks: config.titleTailWeeks,
+    minPageviews: config.titleMinPageviews,
+  }).catch(() => [] as TagStat[]);
+
   const cohortCounts = (
     [
       "normalizovani_vitezove",
@@ -221,6 +237,11 @@ export async function runTitleAnalysis(input: TitleAnalysisInput) {
   if (selection.excludedTruncatedWeeks.length > 0) {
     caveats.push(
       `Vynecháno ${selection.excludedTruncatedWeeks.length} neúplně načtených týdnů: u nich chybí právě nejméně čtené články, což by rozbor propadáků obrátilo naruby.`
+    );
+  }
+  if (tagStats.length === 0) {
+    caveats.push(
+      "Titulky zatím nemají uložené značky, takže vzory níže pojmenoval model znovu a při dalším spuštění se mohou jmenovat jinak. Stabilní porovnání v čase zapnete spuštěním značkování v Adminu → Insights."
     );
   }
   const weakBuckets = selection.rows.filter(
@@ -249,6 +270,7 @@ export async function runTitleAnalysis(input: TitleAnalysisInput) {
     contrastNote: call.raw.contrast_note,
     playbookDraft: call.raw.playbook_draft,
     observations: call.raw.notes ?? [],
+    tagStats,
     reconciliation: {
       assigned: claimed.size,
       unassigned: articles.length - claimed.size,

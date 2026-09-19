@@ -50,6 +50,13 @@ export interface InsightsConfig {
    * bottom cohort wants. Keep it low.
    */
   titleMinPageviews: number;
+  /**
+   * Fixed list of headline-form tags. Fixed on purpose: free-text labels drift
+   * between runs, and two analyses that use different words for the same idea
+   * cannot be compared — which is the whole reason to persist tags at all.
+   */
+  titleTagVocabulary: string[];
+  titleTagsPerRun: number;
   /** Trailing site-name suffixes stripped from a fetched og:title. */
   titleStripSuffixes: string[];
   updatedBy: string | null;
@@ -71,6 +78,8 @@ export const DEFAULT_INSIGHTS_CONFIG: InsightsConfig = {
   titleFetchPerRun: 200,
   titleTailWeeks: 0,
   titleMinPageviews: 10,
+  titleTagVocabulary: [],
+  titleTagsPerRun: 300,
   titleStripSuffixes: [],
   updatedBy: null,
   updatedAt: null,

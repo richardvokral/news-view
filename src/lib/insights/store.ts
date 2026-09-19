@@ -48,6 +48,8 @@ interface ConfigRow {
   title_fetch_per_run: number;
   title_tail_weeks: number;
   title_min_pageviews: number;
+  title_tag_vocabulary: unknown;
+  title_tags_per_run: number;
   title_strip_suffixes: unknown;
   updated_by: string | null;
   updated_at: unknown;
@@ -71,7 +73,8 @@ export async function getInsightsConfig(): Promise<InsightsConfig> {
             max_requests_per_run, refetch_grace_hours, article_path_filter,
             article_path_regex, section_vocabulary, ai_model_key,
             ai_top_articles, title_fetch_per_run, title_strip_suffixes,
-            title_tail_weeks, title_min_pageviews, updated_by, updated_at
+            title_tail_weeks, title_min_pageviews, title_tag_vocabulary,
+            title_tags_per_run, updated_by, updated_at
        FROM insights_config WHERE id = 1`
   );
   if (rows.length === 0) return { ...DEFAULT_INSIGHTS_CONFIG };
@@ -100,6 +103,13 @@ export async function getInsightsConfig(): Promise<InsightsConfig> {
       : DEFAULT_INSIGHTS_CONFIG.titleTailWeeks,
     titleMinPageviews:
       num(r.title_min_pageviews) || DEFAULT_INSIGHTS_CONFIG.titleMinPageviews,
+    titleTagVocabulary: Array.isArray(r.title_tag_vocabulary)
+      ? (r.title_tag_vocabulary as unknown[]).filter(
+          (v): v is string => typeof v === "string"
+        )
+      : [],
+    titleTagsPerRun:
+      num(r.title_tags_per_run) || DEFAULT_INSIGHTS_CONFIG.titleTagsPerRun,
     titleStripSuffixes: Array.isArray(r.title_strip_suffixes)
       ? (r.title_strip_suffixes as unknown[]).filter(
           (v): v is string => typeof v === "string"
@@ -134,6 +144,7 @@ export async function saveInsightsConfig(
   const titleFetchPerRun = clamp(next.titleFetchPerRun, 10, 1000);
   const titleTailWeeks = clamp(next.titleTailWeeks, 0, 4);
   const titleMinPageviews = clamp(next.titleMinPageviews, 1, 10000);
+  const titleTagsPerRun = clamp(next.titleTagsPerRun, 20, 1000);
 
   await getDb().query(
     `INSERT INTO insights_config
@@ -141,9 +152,10 @@ export async function saveInsightsConfig(
         max_requests_per_run, refetch_grace_hours, article_path_filter,
         article_path_regex, section_vocabulary, ai_model_key, ai_top_articles,
         title_fetch_per_run, title_strip_suffixes, title_tail_weeks,
-        title_min_pageviews, updated_by, updated_at)
+        title_min_pageviews, title_tag_vocabulary, title_tags_per_run,
+        updated_by, updated_at)
      VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12,
-             $13::jsonb, $14, $15, $16, NOW())
+             $13::jsonb, $14, $15, $16::jsonb, $17, $18, NOW())
      ON CONFLICT (id) DO UPDATE SET
        backfill_weeks = EXCLUDED.backfill_weeks,
        weeks_per_request = EXCLUDED.weeks_per_request,
@@ -160,6 +172,8 @@ export async function saveInsightsConfig(
        title_strip_suffixes = EXCLUDED.title_strip_suffixes,
        title_tail_weeks = EXCLUDED.title_tail_weeks,
        title_min_pageviews = EXCLUDED.title_min_pageviews,
+       title_tag_vocabulary = EXCLUDED.title_tag_vocabulary,
+       title_tags_per_run = EXCLUDED.title_tags_per_run,
        updated_by = EXCLUDED.updated_by,
        updated_at = NOW()`,
     [
@@ -180,6 +194,10 @@ export async function saveInsightsConfig(
       ),
       titleTailWeeks,
       titleMinPageviews,
+      JSON.stringify(
+        [...new Set(next.titleTagVocabulary.map((v) => v.trim()).filter(Boolean))]
+      ),
+      titleTagsPerRun,
       email,
     ]
   );

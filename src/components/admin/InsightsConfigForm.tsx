@@ -59,6 +59,56 @@ export default function InsightsConfigForm({
   const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null);
   const [discovering, setDiscovering] = useState(false);
   const [discoverSite, setDiscoverSite] = useState(sites[0] ?? "");
+  const [tagging, setTagging] = useState(false);
+  const [tagMsg, setTagMsg] = useState<string | null>(null);
+  const [tagCoverage, setTagCoverage] = useState<{
+    taggable: number;
+    tagged: number;
+    tags: number;
+  } | null>(null);
+
+  // Loops until nothing is untagged, like the other chunked runs.
+  const tagTitles = useCallback(async () => {
+    if (!discoverSite) return;
+    setTagging(true);
+    setTagMsg(null);
+    let tags = 0;
+    try {
+      for (;;) {
+        const res = await fetch("/api/admin/insights/title-tags", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ site: discoverSite }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        tags += data.tagsWritten ?? 0;
+        setTagCoverage(data.coverage ?? null);
+        if (data.skippedReason === "no_titles") {
+          setTagMsg(
+            tags > 0
+              ? `Hotovo — přiřazeno ${tags} značek.`
+              : "Nejsou žádné titulky ke značkování. Doplňte nejdřív skutečné titulky."
+          );
+          break;
+        }
+        if (data.skippedReason) {
+          setTagMsg(`Zastaveno: ${data.skippedReason}`);
+          break;
+        }
+        if (!data.remaining) {
+          setTagMsg(`Hotovo — přiřazeno ${tags} značek.`);
+          break;
+        }
+        setTagMsg(`Přiřazeno ${tags} značek, zbývá ${data.remaining} titulků…`);
+      }
+    } catch (err) {
+      setTagMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTagging(false);
+    }
+  }, [discoverSite]);
+
   const [fetching, setFetching] = useState(false);
   const [fetchMsg, setFetchMsg] = useState<string | null>(null);
   const [coverage, setCoverage] = useState<{
@@ -413,6 +463,74 @@ export default function InsightsConfigForm({
             pak pusťte zbytek.
           </p>
           {fetchMsg && <p className="mt-2 text-xs text-gray-700">{fetchMsg}</p>}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <h2 className="mb-1 font-semibold text-gray-900">Značky titulků</h2>
+        <p className="mb-4 text-xs text-gray-500">
+          Bez uložených značek pojmenovává vzory model při každém spuštění znovu,
+          takže se pokaždé jmenují jinak a dvě analýzy nejdou porovnat. Značkuje
+          se jen jednou; potom je forma titulku běžný sloupec v databázi.
+          Značkují se pouze titulky se skutečným zněním — u titulku odvozeného
+          z URL by značka jako &bdquo;otázka&ldquo; byla vymyšlená.
+        </p>
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium uppercase text-gray-500">
+            Seznam značek
+          </span>
+          <textarea
+            value={config.titleTagVocabulary.join("\n")}
+            onChange={(e) =>
+              setField(
+                "titleTagVocabulary",
+                e.target.value.split("\n").map((v) => v.trim()).filter(Boolean)
+              )
+            }
+            rows={7}
+            placeholder={"jméno konkrétní osoby\npřímá citace\notázka"}
+            className="w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-xs"
+          />
+          <span className="mt-1 block text-xs text-gray-500">
+            Jedna na řádek, o FORMĚ titulku, ne o tématu. Prázdné = použije se
+            výchozí sada. Měňte je opatrně: přejmenování značky rozpojí historii.
+          </span>
+        </label>
+
+        <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50/60 p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium text-gray-700">Označkovat titulky</span>
+            {sites.length > 1 && (
+              <select
+                value={discoverSite}
+                onChange={(e) => setDiscoverSite(e.target.value)}
+                className="rounded-md border border-gray-300 px-2 py-1 text-sm"
+              >
+                {sites.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            )}
+            <button
+              type="button"
+              onClick={tagTitles}
+              disabled={tagging || !discoverSite}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-1 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              {tagging ? "Značkuji…" : "Spustit"}
+            </button>
+            {tagCoverage && (
+              <span className="text-xs text-gray-600">
+                {tagCoverage.tagged} z {tagCoverage.taggable} označkováno
+                {tagCoverage.tags > 0 ? ` · ${tagCoverage.tags} značek celkem` : ""}
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-gray-500">
+            Uložte nejdřív seznam značek. Běží po částech a dá se spustit znovu —
+            značkuje jen to, co ještě značku nemá.
+          </p>
+          {tagMsg && <p className="mt-2 text-xs text-gray-700">{tagMsg}</p>}
         </div>
       </div>
 

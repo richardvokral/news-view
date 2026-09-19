@@ -162,6 +162,62 @@ Paste a Czech headline, optionally with section and perex, pick a playbook and a
 
 The submitted title is sanitised before any prompt exists: control characters stripped, tag delimiters removed, collapsed to one line, capped at 300 characters. A multi-paragraph instruction block cannot survive that.
 
+### Persisted tags — why they exist
+
+The `patterns` the analysis returns are re-derived inside every LLM call, so
+their labels drift: "Jméno osoby v titulku" one run, "Konkrétní osoba v titulku"
+the next. Two analyses then can't be compared, which undercuts the whole point
+of keeping six months of history.
+
+`insights_title_tags` fixes that. A **fixed, admin-managed vocabulary** (default
+set in `DEFAULT_TITLE_TAGS`) is applied once per article by a chunked run at
+`/admin/insights`, and from then on headline form is an ordinary SQL dimension —
+queryable with no model in the loop, and stable across runs.
+
+Design points that matter:
+
+- **Vocabulary, not free text.** The tags are about *form* (`jméno konkrétní
+  osoby`, `přímá citace`, `otázka`), never topic. Renaming a tag breaks the
+  historical series, so the admin copy says so.
+- **Grounded like everything else.** The model returns `{idx, tag_ids}`; the
+  server resolves each id through the vocabulary array and silently drops
+  unknowns. It cannot invent a tag.
+- **Readable titles only** (`headline_source <> 'slug'`). A de-slugified
+  headline has no punctuation or capitalisation, so tagging one `otázka` would
+  be manufacturing evidence. This is also the clearest reason to run the
+  og:title enrichment first.
+- **Every candidate is marked attempted**, including ones the model left
+  untagged, so a title nothing matched isn't retried forever.
+- Tagging is admin-only: it spends tokens.
+
+### The trend column, and what it deliberately isn't
+
+`listTagStats` answers "is this tag rising or fading" by comparing the median
+normalised score in the **first half** of the window against the **second
+half** — reusing the same ledger guards, left-censoring and log-ratio scoring
+as the cohort query. Below 8 articles per half it reports `málo dat` rather
+than a number.
+
+This is deliberately *not* a time-series model. The idea was considered and
+rejected on three grounds, recorded here so it isn't re-proposed:
+
+1. **Wrong question.** Models like Google's TimesFM forecast a series forward.
+   Editors don't ask "how many pageviews will question-headlines get in week
+   40"; they ask "should I write this headline differently" — attribution, not
+   forecasting.
+2. **Far too few points.** A dozen tags over 26 weekly buckets is ~26 points per
+   series. Anything detectable there is detectable with a trend line, which has
+   the advantage of being explainable to an editor.
+3. **The confounding is the actual difficulty, and no model removes it.** A
+   tag's weekly series moves with which stories happened, with Discover ranking
+   changes, and with seasonality. The section×week normalisation attacks exactly
+   that; a forecaster over raw weekly means would be a step backwards on the one
+   hard part.
+
+Where a forecaster *would* fit this codebase: site-level traffic from a long
+daily history, or per-article decay curves on `/monitor`. Both are genuine
+forecasting problems with enough points. Headline form is not.
+
 ## Part 6 — Fetching real titles (`src/lib/insights/titleFetch.ts`)
 
 Admin-only, at `/admin/insights`. Reads `og:title` from the site's own article pages, chunked with the same lock/cancel/deadline shape as the Plausible backfill.
@@ -185,6 +241,7 @@ Uses its own hourly budget, not the monitor's shared Plausible counter — these
 | `insights_backfill_runs` | Run header, so a chunked backfill reads as one operation. |
 | `insights_config` | Singleton knobs. |
 | `insights_prompts` | Editable analysis prompts and saved title playbooks (`kind`, `site_id`, `derived_from_run_id`). |
+| `insights_title_tags` | Persisted headline-form tags, one row per (site, article, tag). The stable dimension behind the tag table and the trend column. |
 | `insights_ai_runs` | Stored runs for all three AI features (`kind` = `themes` / `titles` / `rewrite`): scope, prompt snapshot, model, result, tokens, cost. |
 
 ## API surface
@@ -203,6 +260,7 @@ Uses its own hourly budget, not the monitor's shared Plausible counter — these
 | `POST /api/insights/rewrite` | `insights` + rate limit | Critique and variants for one headline. |
 | `GET/PUT /api/admin/insights/prompts` | admin | Prompt editor. |
 | `GET/POST /api/admin/insights/title-fetch` | admin | og:title enrichment and coverage. |
+| `GET/POST /api/admin/insights/title-tags` | admin | Tagging pass and tag coverage. |
 | `GET /api/admin/insights/section-suggestions` | admin | Leading-token frequencies for vocabulary discovery. |
 
 ## Cost guards
