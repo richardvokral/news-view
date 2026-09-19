@@ -129,6 +129,8 @@ export interface BackfillChunkResult {
   skippedReason?: BackfillSkipReason;
   metricsTier: MetricTier | null;
   pathFilter: string | null;
+  /** How far back this run actually reached, after the clamp to config. */
+  horizonWeeks?: number;
   processed: {
     weekStart: string;
     rows: number;

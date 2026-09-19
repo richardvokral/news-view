@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import AnalysisResult from "./AnalysisResult";
+import { periodOptions, weekOffset, weeksLabel } from "./periods";
 import type { InsightRunResult } from "@/lib/insights/types";
 
 interface RunSummary {
@@ -14,13 +15,6 @@ interface RunSummary {
   costCzk: number;
   error: string | null;
   params: { weekStartFrom?: string; weekStartTo?: string } | null;
-}
-
-function weekOffset(weeks: number): string {
-  const d = new Date();
-  const shift = (d.getUTCDay() + 6) % 7;
-  d.setUTCDate(d.getUTCDate() - shift - weeks * 7);
-  return d.toISOString().slice(0, 10);
 }
 
 export default function ThemesTab({
@@ -123,9 +117,9 @@ export default function ThemesTab({
               onChange={(e) => setWeeks(Number(e.target.value))}
               className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
             >
-              {[4, 8, 13, 26, 52].map((w) => (
+              {periodOptions(1, 2, 4, 8, 13, 26, 52).map((w) => (
                 <option key={w} value={w}>
-                  Posledních {w} týdnů
+                  {weeksLabel(w)}
                 </option>
               ))}
             </select>

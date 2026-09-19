@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import type { TitleAnalysisResult } from "@/lib/insights/titleRun";
+import { periodOptions, weekOffset, weeksLabel } from "./periods";
 
 const fmt = new Intl.NumberFormat("cs-CZ");
 
@@ -17,13 +18,6 @@ const TREND_CLASS: Record<string, string> = {
   klesa: "bg-amber-100 text-amber-700",
   malo_dat: "bg-gray-100 text-gray-400",
 };
-
-function weekOffset(weeks: number): string {
-  const d = new Date();
-  const shift = (d.getUTCDay() + 6) % 7;
-  d.setUTCDate(d.getUTCDate() - shift - weeks * 7);
-  return d.toISOString().slice(0, 10);
-}
 
 export default function TitlesTab({
   site,
@@ -130,8 +124,8 @@ export default function TitlesTab({
             <span className="mb-1 block text-xs font-medium uppercase text-gray-500">Období</span>
             <select value={weeks} onChange={(e) => setWeeks(Number(e.target.value))}
               className="rounded-md border border-gray-300 px-2 py-1.5 text-sm">
-              {[8, 13, 26, 52].map((w) => (
-                <option key={w} value={w}>Posledních {w} týdnů</option>
+              {periodOptions(4, 6, 8, 13, 26, 52).map((w) => (
+                <option key={w} value={w}>{weeksLabel(w)}</option>
               ))}
             </select>
           </label>

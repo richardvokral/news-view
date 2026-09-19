@@ -196,7 +196,18 @@ export async function getBackfillProgress(
 }
 
 export interface BackfillOptions {
-  weeks?: number;
+  /**
+   * How far back this run reaches, in weeks. Defaults to
+   * `config.backfillWeeks` and is clamped to it, so this only ever shortens.
+   * The entire cost of a run is the number of weeks it has to ask Plausible
+   * for, so a short horizon is the "just give me fresh numbers" fast path.
+   */
+  horizonWeeks?: number;
+  /**
+   * How many weeks a single HTTP request processes before reporting back.
+   * Unrelated to the horizon: the client keeps calling until `remaining` is 0.
+   */
+  chunkWeeks?: number;
   runKey?: string;
   startedBy?: string;
 }
@@ -238,6 +249,18 @@ export async function runInsightsBackfill(
   const config = await getInsightsConfig();
   const redis = getRedis();
 
+  // Clamped to the configured depth: a run that reached further would write
+  // ledger rows the status endpoint never lists, so the progress bar would
+  // never account for them.
+  const askedHorizon = opts.horizonWeeks;
+  const horizonWeeks =
+    typeof askedHorizon === "number" &&
+    Number.isFinite(askedHorizon) &&
+    askedHorizon > 0
+      ? Math.min(Math.max(1, Math.round(askedHorizon)), config.backfillWeeks)
+      : config.backfillWeeks;
+  base.horizonWeeks = horizonWeeks;
+
   // Deliberately fails CLOSED, unlike src/lib/rate-limit.ts which fails open by
   // design. A fail-open lock here means two concurrent backfills burning the
   // shared Plausible quota.
@@ -272,7 +295,7 @@ export async function runInsightsBackfill(
 
     const now = new Date();
     const thisWeek = currentWeekStart(now);
-    const all = recentWeeks(config.backfillWeeks, now);
+    const all = recentWeeks(horizonWeeks, now);
     const due = all.filter((w) => needsFetch(w, ledger, config, now));
 
     // The current week is always partial, so it must not count toward
@@ -282,7 +305,7 @@ export async function runInsightsBackfill(
     const queue = [...dueComplete, ...dueCurrent];
 
     const chunkSize = Math.min(
-      Math.max(1, opts.weeks ?? config.weeksPerRequest),
+      Math.max(1, opts.chunkWeeks ?? config.weeksPerRequest),
       8
     );
     const vocabulary = new Set(config.sectionVocabulary);

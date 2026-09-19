@@ -136,6 +136,7 @@ MV3 extension loaded unpacked. Communicates with this app over HTTPS using a bea
 - The Chrome extension defaults its backend to `https://news-view.vercel.app`. For local testing, point it to `http://localhost:3000` in **Nastavení serveru**.
 - `ADMIN_EMAILS` is read fresh on every request; rotating it does not require a redeploy if you change it in Vercel env, but a redeploy is still needed for it to apply (env is baked at build for non-edge).
 - Rate limits fail **open** when Redis is unreachable (by design — Redis is on every hot path), so they're a speed bump, not a hard cap.
+- The insights backfill has two unrelated "weeks": `horizonWeeks` (how far back a run reaches, clamped to `backfill_weeks`, only ever shortens) and `chunkWeeks` (how many weeks one HTTP request handles, sent as `weeks` in the request body). Shortening the horizon is the fast path; a missing `article_path_filter` is usually the bigger cost.
 - `maxDuration` in a route file must be a **literal** — Next rejects an imported constant with "Invalid segment configuration export". `/api/insights/backfill` hardcodes 300 next to a comment pointing at `BACKFILL_MAX_DURATION_S`.
 - The migrator's SQL splitter breaks on a line-ending `;` or a `--` inside a string literal, so Czech prompt bodies are seeded from TypeScript (`ensureDefaultPrompts()`), not from `db-schema.sql`. Do the same for any new prose seed.
 - Summing weekly Plausible `visitors` overcounts uniques; only `pageviews` sums cleanly. `bounce_rate`/`visit_duration` are session metrics and must be averaged weighted by `visits`.

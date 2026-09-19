@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { periodOptions, weeksLabel } from "./periods";
 
 interface WeekStatus {
   weekStart: string;
@@ -18,6 +19,10 @@ interface StatusResponse {
   errored: number;
   missing: number;
   backfillWeeks: number;
+  horizonWeeks: number;
+  totalWeeks: number;
+  totalLoaded: number;
+  pathFilterSet: boolean;
   metricsTier: number | null;
   weeks: WeekStatus[];
 }
@@ -28,6 +33,7 @@ interface ChunkResult {
   remaining: number;
   refreshedCurrentWeek: boolean;
   apiCallsUsed: number;
+  horizonWeeks?: number;
   skippedReason?: string;
   processed: { weekStart: string; rows: number; truncated: boolean }[];
   aborted?: { weekStart: string | null; error: string };
@@ -44,10 +50,12 @@ const SKIP_LABELS: Record<string, string> = {
 
 export default function FetchPanel({
   site,
+  backfillWeeks,
   weeksPerRequest,
   onLoaded,
 }: {
   site: string;
+  backfillWeeks: number;
   weeksPerRequest: number;
   onLoaded: () => void;
 }) {
@@ -56,20 +64,24 @@ export default function FetchPanel({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [weeksDone, setWeeksDone] = useState(0);
+  // How far back this load reaches. The full history is the default because a
+  // first run genuinely needs it; a short range is the "just refresh the
+  // recent weeks" path, and the whole cost of a run is the weeks it fetches.
+  const [horizon, setHorizon] = useState(backfillWeeks);
   const runKeyRef = useRef<string | null>(null);
   const stopRef = useRef(false);
 
   const loadStatus = useCallback(async () => {
     try {
       const res = await fetch(
-        `/api/insights/backfill-status?site=${encodeURIComponent(site)}`
+        `/api/insights/backfill-status?site=${encodeURIComponent(site)}&weeks=${horizon}`
       );
       if (!res.ok) return;
       setStatus(await res.json());
     } catch {
       // Freshness is informational; a failure here shouldn't shout.
     }
-  }, [site]);
+  }, [site, horizon]);
 
   useEffect(() => {
     loadStatus();
@@ -85,6 +97,9 @@ export default function FetchPanel({
     setWeeksDone(0);
     stopRef.current = false;
     runKeyRef.current = null;
+    // Pinned for the whole loop: changing the range mid-run would move the
+    // finish line and the progress bar with it.
+    const runHorizon = horizon;
 
     try {
       for (;;) {
@@ -95,6 +110,7 @@ export default function FetchPanel({
           body: JSON.stringify({
             site,
             weeks: weeksPerRequest,
+            horizonWeeks: runHorizon,
             ...(runKeyRef.current ? { runKey: runKeyRef.current } : {}),
           }),
         });
@@ -120,7 +136,11 @@ export default function FetchPanel({
           break;
         }
         if (data.remaining === 0) {
-          setMessage("Hotovo — všechna období jsou načtená.");
+          setMessage(
+            runHorizon < backfillWeeks
+              ? `Hotovo — ${weeksLabel(runHorizon).toLowerCase()} je načteno. Starší týdny zůstávají, jak byly.`
+              : "Hotovo — všechna období jsou načtená."
+          );
           break;
         }
       }
@@ -131,7 +151,7 @@ export default function FetchPanel({
       onLoaded();
       loadStatus();
     }
-  }, [site, weeksPerRequest, loadStatus, onLoaded]);
+  }, [site, weeksPerRequest, horizon, backfillWeeks, loadStatus, onLoaded]);
 
   const stop = useCallback(async () => {
     stopRef.current = true;
@@ -143,9 +163,12 @@ export default function FetchPanel({
     }).catch(() => {});
   }, []);
 
-  const total = status?.backfillWeeks ?? 0;
+  const total = status?.horizonWeeks ?? horizon;
   const loaded = status?.loaded ?? 0;
   const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
+  const ranges = periodOptions(2, 4, 8, 13, 26, backfillWeeks).filter(
+    (w) => w <= backfillWeeks
+  );
 
   return (
     <div className="mb-5 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -156,11 +179,32 @@ export default function FetchPanel({
             {status
               ? `${loaded} z ${total} týdnů načteno${
                   status.errored > 0 ? ` · ${status.errored} s chybou` : ""
+                }${
+                  total < status.totalWeeks
+                    ? ` · celá historie ${status.totalLoaded} z ${status.totalWeeks}`
+                    : ""
                 }`
               : "Zjišťuji stav…"}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="text-sm">
+            <span className="sr-only">Rozsah načítání</span>
+            <select
+              value={horizon}
+              onChange={(e) => setHorizon(Number(e.target.value))}
+              disabled={running}
+              className="rounded-md border border-gray-300 px-2 py-1.5 text-sm disabled:opacity-50"
+              title="Kratší rozsah = rychlejší načtení. Starší týdny zůstanou v databázi."
+            >
+              {ranges.map((w) => (
+                <option key={w} value={w}>
+                  {weeksLabel(w)}
+                  {w === backfillWeeks ? " (vše)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
           {running && (
             <button
               type="button"
@@ -175,7 +219,7 @@ export default function FetchPanel({
             onClick={run}
             disabled={running}
             className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-            title="Načte jen chybějící týdny; běží po částech."
+            title="Načte jen chybějící týdny ve zvoleném rozsahu; běží po částech."
           >
             {running
               ? `Načítám… (${weeksDone} týdnů)`
@@ -204,6 +248,17 @@ export default function FetchPanel({
         <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-2.5 text-xs text-red-700">
           {error}
         </div>
+      )}
+      {status && !status.pathFilterSet && (
+        <p className="mt-2 text-xs text-amber-700">
+          Není nastavený filtr cest článků, takže se pro každý týden prochází
+          všechny URL s návštěvností — to je obvykle hlavní důvod, proč načítání
+          trvá dlouho. Nastavte ho v{" "}
+          <a href="/admin/insights" className="font-medium underline">
+            nastavení Insights
+          </a>
+          .
+        </p>
       )}
       {status && status.metricsTier !== null && status.metricsTier > 1 && (
         <p className="mt-2 text-xs text-amber-700">

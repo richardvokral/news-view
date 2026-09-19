@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import FetchPanel from "./FetchPanel";
+import { periodOptions, weekOffset, weeksLabel } from "./periods";
 
 interface ArticleRow {
   pagePath: string;
@@ -15,13 +16,6 @@ interface ArticleRow {
   firstWeek: string;
   lastWeek: string;
   weeksActive: number;
-}
-
-function weekOffset(weeks: number): string {
-  const d = new Date();
-  const shift = (d.getUTCDay() + 6) % 7;
-  d.setUTCDate(d.getUTCDate() - shift - weeks * 7);
-  return d.toISOString().slice(0, 10);
 }
 
 const fmt = new Intl.NumberFormat("cs-CZ");
@@ -41,6 +35,10 @@ export default function ArticlesTab({
   const [weeks, setWeeks] = useState(12);
   const [section, setSection] = useState("");
   const [rankBy, setRankBy] = useState<"pageviews" | "visitors">("pageviews");
+  // The running week is excluded by default because it is incomplete and would
+  // rank unfairly against full weeks. For a "what is hot right now" read that
+  // is exactly the week you want, so it is a choice rather than a rule.
+  const [includePartial, setIncludePartial] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -51,6 +49,7 @@ export default function ArticlesTab({
       rankBy,
       limit: "200",
     });
+    if (includePartial) params.set("partial", "1");
     if (section) params.set("sections", section);
     try {
       const res = await fetch(`/api/insights/articles?${params}`);
@@ -65,7 +64,7 @@ export default function ArticlesTab({
       setError(err instanceof Error ? err.message : String(err));
       setRows([]);
     }
-  }, [site, weeks, section, rankBy]);
+  }, [site, weeks, section, rankBy, includePartial]);
 
   useEffect(() => {
     load();
@@ -88,6 +87,7 @@ export default function ArticlesTab({
     <div>
       <FetchPanel
         site={site}
+        backfillWeeks={backfillWeeks}
         weeksPerRequest={weeksPerRequest}
         onLoaded={load}
       />
@@ -102,11 +102,13 @@ export default function ArticlesTab({
             onChange={(e) => setWeeks(Number(e.target.value))}
             className="rounded-md border border-gray-300 px-2 py-1.5 text-sm"
           >
-            {[4, 8, 12, 26, Math.max(52, backfillWeeks)].map((w) => (
-              <option key={w} value={w}>
-                Posledních {w} týdnů
-              </option>
-            ))}
+            {periodOptions(1, 2, 4, 8, 12, 26, Math.max(52, backfillWeeks)).map(
+              (w) => (
+                <option key={w} value={w}>
+                  {weeksLabel(w)}
+                </option>
+              )
+            )}
           </select>
         </label>
 
@@ -142,6 +144,18 @@ export default function ArticlesTab({
             <option value="pageviews">Zobrazení</option>
             <option value="visitors">Návštěvníci (součet)</option>
           </select>
+        </label>
+
+        <label className="flex items-center gap-2 pb-1.5 text-sm text-gray-700">
+          <input
+            type="checkbox"
+            checked={includePartial}
+            onChange={(e) => setIncludePartial(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300"
+          />
+          <span title="Probíhající týden ještě nabíhá, takže se s celými týdny nedá poctivě srovnávat.">
+            Včetně probíhajícího týdne
+          </span>
         </label>
 
         <div className="ml-auto text-xs text-gray-500">

@@ -15,12 +15,27 @@ Cost is bounded by **scope per run**, not by retention: every analysis picks its
 Manual, chunked, abortable.
 
 ```
-POST /api/insights/backfill  { site, weeks?, runKey? }
+POST /api/insights/backfill  { site, weeks?, horizonWeeks?, runKey? }
   -> { ok, runKey, processed[], remaining, refreshedCurrentWeek,
-       apiCallsUsed, metricsTier, skippedReason?, aborted? }
+       apiCallsUsed, metricsTier, horizonWeeks, skippedReason?, aborted? }
 ```
 
 The client loops until `remaining === 0`. Each request handles up to `weeks_per_request` weeks and stops early on a wall-clock deadline (240 s, inside the 300 s `maxDuration`), so a dropped response is harmless — the next call re-derives the outstanding weeks from the ledger.
+
+### Two different "weeks"
+
+These are easy to confuse and they do completely different jobs:
+
+| | Field | Meaning |
+| --- | --- | --- |
+| **Horizon** | `horizonWeeks` (`BackfillOptions.horizonWeeks`) | How far back the run reaches at all. Defaults to `backfill_weeks` and is **clamped to it**, so this only ever shortens. This is the number that decides how long a full load takes. |
+| **Chunk** | `weeks` (`BackfillOptions.chunkWeeks`) | How many weeks one HTTP request processes before answering. Defaults to `weeks_per_request`, hard cap 8. Purely a serverless-timeout concern — the client keeps calling either way. |
+
+Before the horizon existed, `opts.weeks` was the chunk size and there was no way to say "just refresh the last month": the loop always ran to `backfill_weeks`. The first load genuinely needs the full six months, but every later "the numbers look stale" wants a two- to four-week run, and that is now a dropdown in the fetch panel. Weeks outside the chosen horizon are left exactly as they were — a short run never deletes or invalidates older data.
+
+The clamp is deliberate rather than defensive: a run reaching past `backfill_weeks` would write ledger rows that `GET /api/insights/backfill-status` never lists, so the progress bar could never account for them.
+
+`GET /api/insights/backfill-status?site=…&weeks=N` scopes its week list and its `loaded`/`errored`/`missing` counts to the same horizon (otherwise a finished 4-week run shows a 15 %-full bar) while still reporting `totalLoaded`/`totalWeeks` across the full configured depth. It also returns `pathFilterSet`, which the panel uses to point at the single biggest cause of a slow load — see **Rate budget** below.
 
 **Weeks** are Monday–Sunday, sent as `period=custom&date=<start>,<end>`. ⚠️ Plausible interprets those in the *site's* timezone, not UTC, so don't describe them as UTC weeks.
 
@@ -63,6 +78,20 @@ Only the probe may step down. Once a tier is proven for the run, any later error
 The Plausible limit (600 req/h by default) is **per API key and shared with the monitor**, so the backfill spends from the monitor's counter (`monitor:requests:<hour>`) rather than a private one — a separate budget would let a backfill trip a 429 that also kills the monitor.
 
 A 6-month backfill of one site costs roughly 55–80 calls with a path filter configured, 160–400 without. With a 5-minute monitor tick (~250 calls/h) there is ~340/h of headroom, so a filtered backfill fits in one hour and an unfiltered worst case needs two.
+
+**If loading feels slow, look at the path filter before anything else.** Without `article_path_filter` the breakdown pages through every URL with traffic — up to `max_pages_per_week` (default 20) requests per week instead of the 1–3 a filtered week needs. That is a bigger factor than the number of weeks, which is why the fetch panel says so explicitly when the filter is unset. Shortening the horizon helps on top of that, not instead of it.
+
+## Choosing a period
+
+Every tab picks a window in whole weeks and converts it to week-start bounds with `weekOffset` (`src/components/insights/periods.ts`, shared so the Czech plural rules and the Monday maths live in one place).
+
+| Tab | Range | Shortest option | Why |
+| --- | --- | --- | --- |
+| Články | `weekOffset(weeks)` … `weekOffset(0)` | 1 week | The running week is filtered out server-side unless `partial=1`, so "1 week" is the last complete week. |
+| Témata | `weekOffset(weeks)` … `weekOffset(1)` | 1 week | Ends at the last complete week, so a 1-week run analyses exactly that week. |
+| Titulky | `weekOffset(weeks)` … `weekOffset(1)` | 4 weeks | Four cohorts, left-censoring and a fixed exposure window; `runTitleAnalysis` refuses under 20 rows, and a 1- or 2-week option would only ever produce that error. |
+
+Články also has a **Včetně probíhajícího týdne** toggle (`partial=1`). It is off by default because an incomplete week ranks unfairly against full ones, but when the question is "what is hot right now" that is the week you want — and it is the only way to see data from a fetch that only refreshed the current week.
 
 ## Part 2 — URL parsing (`src/lib/insights/paths.ts`)
 
@@ -250,7 +279,7 @@ Uses its own hourly budget, not the monitor's shared Plausible counter — these
 | --- | --- | --- |
 | `POST /api/insights/backfill` | `insights` + rate limit | One chunk of the backfill. Returns 200 even on abort — the run partially succeeded and the client needs the payload. |
 | `POST /api/insights/backfill/cancel` | `insights` | Sets the cancel flag. |
-| `GET /api/insights/backfill-status` | `insights` | Per-week freshness for the progress panel. |
+| `GET /api/insights/backfill-status` | `insights` | Per-week freshness for the progress panel; `?weeks=N` scopes the counts to a shorter horizon. |
 | `GET /api/insights/articles` | `insights` | Aggregated article table. |
 | `POST /api/insights/analyze` | `insights` + rate limit | Runs and stores an analysis. |
 | `GET /api/insights/analyses` | `insights` | Run history; `?id=` returns one with its full result. |
@@ -277,6 +306,7 @@ The `insights` grant can spend both Plausible quota and AI tokens, so limits are
 
 ## Gotchas
 
+- `horizonWeeks` and `weeks` in the backfill request body are *not* the same thing — see **Two different "weeks"**. The lib-side option is `chunkWeeks` precisely so the collision can't come back.
 - `maxDuration` must be a literal in a route file, so `/api/insights/backfill` hardcodes `300` — keep it in sync with `BACKFILL_MAX_DURATION_S`, which derives the loop deadline.
 - The path filter (`article_path_filter`, e.g. `/a/**`) is a bandwidth optimisation only; the local regex is always applied and is the correctness boundary. Wildcard support varies across Plausible versions — if the filter returns nothing, clear it and filter locally.
 - `views_per_visit` is in `VALID_METRICS` but is unsupported on breakdown endpoints, so `/api/plausible?endpoint=breakdown&metrics=views_per_visit` 400s upstream. Pre-existing, unrelated to insights, worth fixing separately.

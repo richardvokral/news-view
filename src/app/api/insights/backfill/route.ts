@@ -23,7 +23,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  let body: { site?: unknown; weeks?: unknown; runKey?: unknown };
+  let body: {
+    site?: unknown;
+    weeks?: unknown;
+    horizonWeeks?: unknown;
+    runKey?: unknown;
+  };
   try {
     body = await request.json();
   } catch {
@@ -57,9 +62,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const weeks =
+  // Two different "weeks": `weeks` is how many the server chews through before
+  // answering, `horizonWeeks` is how far back the run reaches at all. Only the
+  // second one decides how long a full load takes.
+  const chunkWeeks =
     typeof body.weeks === "number" && Number.isFinite(body.weeks)
       ? Math.min(Math.max(1, Math.round(body.weeks)), 8)
+      : undefined;
+  const horizonWeeks =
+    typeof body.horizonWeeks === "number" && Number.isFinite(body.horizonWeeks)
+      ? Math.min(Math.max(1, Math.round(body.horizonWeeks)), 260)
       : undefined;
   const runKey =
     typeof body.runKey === "string" && body.runKey.trim()
@@ -70,7 +82,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await runInsightsBackfill(site, {
-      weeks,
+      chunkWeeks,
+      horizonWeeks,
       runKey,
       startedBy: session.email,
     });
